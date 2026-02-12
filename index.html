@@ -5,9 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Nest One Portal</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
-
     <style>
         :root {
             --tg-bg: var(--tg-theme-bg-color, #ffffff);
@@ -17,33 +14,16 @@
             --tg-hint: var(--tg-theme-hint-color, #8e8e93);
         }
         body { font-family: -apple-system, sans-serif; background: #f0f2f5; color: var(--tg-text); margin: 0; padding: 0; }
-        
-        .app-container {
-            background: var(--tg-bg);
-            min-height: 100vh;
-            margin: 0 auto;
-            padding: 20px;
-            box-sizing: border-box;
-            box-shadow: 0 0 15px rgba(0,0,0,0.05);
-        }
-
-        /* Адаптивность: 80% на ПК */
-        @media (min-width: 801px) { .app-container { width: 80%; } }
-        @media (max-width: 800px) { .app-container { width: 100%; } }
-
+        .app-container { background: var(--tg-bg); min-height: 100vh; margin: 0 auto; padding: 20px; box-sizing: border-box; }
+        @media (min-width: 801px) { .app-container { width: 80%; box-shadow: 0 0 20px rgba(0,0,0,0.1); } }
         .hidden { display: none !important; }
-        .btn { background: var(--tg-btn); color: var(--tg-btn-text); padding: 16px; width: 100%; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; margin-bottom: 12px; cursor: pointer; display: block; text-align: center; }
+        .btn { background: var(--tg-btn); color: var(--tg-btn-text); padding: 16px; width: 100%; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; margin-bottom: 12px; cursor: pointer; display: block; text-align: center; text-decoration: none; }
         .btn-secondary { background: var(--tg-hint); opacity: 0.8; }
         .card { border: 1px solid rgba(0,0,0,0.1); border-radius: 15px; padding: 15px; margin-bottom: 15px; background: rgba(127,127,127,0.05); }
-        
         #loader-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--tg-bg); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; }
         .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid var(--tg-btn); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        #pdf-viewer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 10000; overflow-y: auto; }
-        .close-pdf { position: fixed; right: 20px; top: 20px; background: rgba(255,255,255,0.3); color: #fff; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 20px; }
-        canvas { display: block; margin: 10px auto; max-width: 100%; }
-        #debug-log { background: #000; color: #0f0; padding: 10px; font-family: monospace; font-size: 11px; margin-top: 20px; border-radius: 8px; text-align: left; max-height: 80px; overflow: auto; }
+        #debug-log { background: #1c1c1c; color: #00ff00; padding: 10px; font-family: monospace; font-size: 10px; margin-top: 20px; border-radius: 8px; text-align: left; max-height: 150px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
     </style>
 </head>
 <body>
@@ -54,53 +34,41 @@
     </div>
 
     <div class="app-container">
-        <div id="screen-lang" class="hidden" style="text-align: center; padding-top: 10vh;">
-            <h2>Tilni tanlang / Выберите язык</h2>
+        <div id="screen-lang" class="hidden" style="text-align: center; padding-top: 5vh;">
+            <h2>Tilni tanlang / Язык</h2>
             <button class="btn" onclick="apiCall('setLang', {lang:'uz'})">O'zbekcha</button>
             <button class="btn" onclick="apiCall('setLang', {lang:'ru'})">Русский</button>
-            <button class="btn" onclick="apiCall('setLang', {lang:'en'})">English</button>
         </div>
 
-        <div id="screen-phone" class="hidden" style="text-align: center; padding-top: 10vh;">
+        <div id="screen-phone" class="hidden" style="text-align: center; padding-top: 5vh;">
             <h2 id="ph-title">Верификация</h2>
-            <p id="ph-desc">...</p>
+            <p id="ph-desc">Нажмите кнопку, чтобы подтвердить номер.</p>
             <br>
-            <button class="btn" id="btn-req-phone">📱 Поделиться номером телефона</button>
-            <button class="btn btn-secondary" onclick="refusePhone()">Отказаться</button>
-            <div id="debug-log">System: Ready</div>
+            <button class="btn" onclick="requestPhone()">📱 Поделиться номером телефона</button>
+            <button class="btn btn-secondary" onclick="tg.close()">Закрыть</button>
+            
+            <div id="debug-log">Log: Ожидание действий...</div>
         </div>
 
         <div id="screen-upload" class="hidden">
             <h2 id="up-title">Документы</h2>
-            <p id="up-desc">...</p>
-            <select id="doc-type" style="width:100%; padding:12px; margin-bottom:15px; border-radius:10px; border:1px solid #ccc;"></select>
+            <select id="doc-type" style="width:100%; padding:12px; margin-bottom:15px; border-radius:10px;"></select>
             <div class="card">
                 <input type="file" id="file-input" accept="application/pdf,image/*" style="margin-bottom:15px;">
                 <button class="btn" id="upload-btn" onclick="handleFileUpload()">Отправить файл</button>
                 <div id="upload-status" style="text-align:center; color:#4cd964; font-weight:bold;"></div>
             </div>
-            <button class="btn btn-secondary" onclick="showScreen('screen-wait')">Готово</button>
+            <button class="btn btn-secondary" onclick="showScreen('screen-wait')">Я всё загрузил</button>
         </div>
 
-        <div id="screen-wait" class="hidden" style="text-align: center; padding-top: 25vh;">
+        <div id="screen-wait" class="hidden" style="text-align: center; padding-top: 20vh;">
             <div style="font-size: 60px;">⏳</div>
             <h2 id="wait-title">Проверка</h2>
-            <p id="wait-desc">Ваши документы проверяются.</p>
-        </div>
-
-        <div id="screen-agenda" class="hidden">
-            <h2 id="agenda-title">Повестка собрания</h2>
-            <div id="agenda-container"></div>
-        </div>
-
-        <div id="pdf-viewer" class="hidden">
-            <button class="close-pdf" onclick="closePdf()">✕</button>
-            <div id="pdf-pages"></div>
+            <p id="wait-desc">Ваши данные на модерации.</p>
         </div>
     </div>
 
 <script>
-    // ВСТАВЬТЕ СЮДА ВАШ URL
     const API_URL = "https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec"; 
 
     const tg = window.Telegram.WebApp;
@@ -108,25 +76,16 @@
     tg.expand();
 
     const user = tg.initDataUnsafe?.user;
-    let currentLang = 'ru';
 
-    function addLog(m) { document.getElementById('debug-log').innerHTML += "<br>> " + m; }
+    function addLog(m) {
+        const log = document.getElementById('debug-log');
+        log.innerHTML += "\n> " + m;
+        log.scrollTop = log.scrollHeight;
+    }
 
     const UI_TEXTS = {
-        ru: {
-            ph_title: "Верификация", ph_desc: "Нажмите кнопку, чтобы подтвердить ваш номер телефона для доступа к ОСИ.",
-            up_title: "Собственность", up_desc: "Загрузите Паспорт, Кадастр или Доверенность.",
-            refuse: "Обратитесь в клиентский отдел для регистрации.",
-            types: ["Паспорт / ID", "Кучерма (Кадастр)", "Доверенность"],
-            wait_title: "На модерации", wait_desc: "Доступ откроется после одобрения администратором.", view: "Открыть"
-        },
-        uz: {
-            ph_title: "Verifikatsiya", ph_desc: "Raqamingizni tasdiqlash uchun quyidagi tugmani bosing.",
-            up_title: "Mulk", up_desc: "Pasport, Kadastr yoki Ishonchnomani yuklang.",
-            refuse: "Ro'yxatdan o'tish uchun mijozlar bo'limiga murojaat qiling.",
-            types: ["Pasport / ID", "Ko'chirma (Kadastr)", "Ishonchnoma"],
-            wait_title: "Tekshirilmoqda", wait_desc: "Moderatsiyadan so'ng ruxsat beriladi.", view: "Ko'rish"
-        }
+        ru: { ph_title: "Верификация", ph_desc: "Это необходимо для доступа к документам ОСИ Nest One.", types: ["Паспорт / ID", "Кадастр", "Доверенность"] },
+        uz: { ph_title: "Verifikatsiya", ph_desc: "Nest One OSI hujjatlariga kirish uchun raqamingizni tasdiqlang.", types: ["Pasport / ID", "Kadastr", "Ishonchnoma"] }
     };
 
     async function apiCall(action, payload = {}) {
@@ -135,6 +94,7 @@
         payload.action = action;
         payload.tgId = user.id;
         payload.name = user.first_name;
+
         try {
             const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
             const data = await res.json();
@@ -143,136 +103,40 @@
             return data;
         } catch (e) {
             document.getElementById('loader-screen').classList.add('hidden');
-            addLog("Error: " + e.message);
+            addLog("API Error: " + e.message);
         }
     }
 
     function handleRouting(data) {
-        currentLang = data.lang || '';
+        const lang = data.lang || '';
         const hasPh = data.hasPhone;
         const status = data.status;
 
-        if (!currentLang) {
+        if (!lang) {
             showScreen('screen-lang');
         } else if (!hasPh && status !== 'Активный') {
-            showPhoneUI();
-        } else if (status === 'Новый' || status === 'Регистрация' || status === 'PENDING') {
-            showUploadUI();
-        } else if (status === 'Активный') {
-            loadAgenda();
+            showPhoneUI(lang);
+        } else if (status === 'Новый' || status === 'Регистрация') {
+            showUploadUI(lang);
         } else {
             showScreen('screen-wait');
-            updateWaitText();
         }
     }
 
     function showScreen(id) {
-        ['screen-lang', 'screen-phone', 'screen-upload', 'screen-wait', 'screen-agenda'].forEach(s => {
-            document.getElementById(s).classList.add('hidden');
-        });
+        ['screen-lang', 'screen-phone', 'screen-upload', 'screen-wait'].forEach(s => document.getElementById(s).classList.add('hidden'));
         document.getElementById(id).classList.remove('hidden');
     }
 
-    function showPhoneUI() {
+    function showPhoneUI(lang) {
         showScreen('screen-phone');
-        const t = UI_TEXTS[currentLang] || UI_TEXTS.ru;
+        const t = UI_TEXTS[lang] || UI_TEXTS.ru;
         document.getElementById('ph-title').innerText = t.ph_title;
         document.getElementById('ph-desc').innerText = t.ph_desc;
     }
 
-    document.getElementById('btn-req-phone').onclick = function() {
-        addLog("SDK Request...");
-        tg.requestContact((success, response) => {
-            if (success) {
-                const contact = response.response?.contact || response.contact;
-                if (contact?.phone_number) {
-                    apiCall('updatePhone', { phone: contact.phone_number });
-                }
-            } else { addLog("Denied."); }
-        });
-    };
-
-    function refusePhone() {
-        tg.showPopup({ title: 'Nest One', message: UI_TEXTS[currentLang].refuse, buttons: [{type: 'close'}] }, () => tg.close());
-    }
-
-    function showUploadUI() {
-        showScreen('screen-upload');
-        const t = UI_TEXTS[currentLang] || UI_TEXTS.ru;
-        document.getElementById('up-title').innerText = t.up_title;
-        document.getElementById('up-desc').innerText = t.up_desc;
-        const sel = document.getElementById('doc-type');
-        sel.innerHTML = "";
-        t.types.forEach(type => sel.add(new Option(type, type)));
-    }
-
-    function updateWaitText() {
-        const t = UI_TEXTS[currentLang] || UI_TEXTS.ru;
-        document.getElementById('wait-title').innerText = t.wait_title;
-        document.getElementById('wait-desc').innerText = t.wait_desc;
-    }
-
-    async function handleFileUpload() {
-        const fileIn = document.getElementById('file-input');
-        const type = document.getElementById('doc-type').value;
-        if (!fileIn.files.length) return alert("Файл не выбран");
-        const btn = document.getElementById('upload-btn');
-        btn.innerText = "Загрузка...";
-        const file = fileIn.files[0];
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            const base64 = e.target.result.split(',')[1];
-            const res = await apiCall('upload', { base64: base64, mime: file.type, type: type });
-            if (res?.success) {
-                document.getElementById('upload-status').innerText = "✅ Успешно";
-                fileIn.value = "";
-            }
-            btn.innerText = "Отправить файл";
-        };
-        reader.readAsDataURL(file);
-    }
-
-    async function loadAgenda() {
-        showScreen('screen-agenda');
-        const res = await apiCall('getAgenda');
-        if (res?.success) {
-            const container = document.getElementById('agenda-container');
-            container.innerHTML = "";
-            res.agenda.forEach(item => {
-                let fHtml = "";
-                item.files.forEach(f => {
-                    fHtml += `<div style="display:flex; justify-content:space-between; align-items:center; background:#fff; padding:10px; border-radius:10px; margin-top:10px; border:1px solid #eee;">
-                        <span>${f.name}</span>
-                        <button class="btn" style="width:auto; margin:0; padding:8px 15px; font-size:12px;" onclick="openPdf('${f.driveId}')">Открыть</button>
-                    </div>`;
-                });
-                container.innerHTML += `<div class="card"><h3>${item.title}</h3><p>${item.desc || ""}</p>${fHtml}</div>`;
-            });
-        }
-    }
-
-    async function openPdf(fileId) {
-        document.getElementById('pdf-viewer').classList.remove('hidden');
-        document.getElementById('pdf-pages').innerHTML = "<p style='color:white;text-align:center;padding:50px;'>Загрузка...</p>";
-        const res = await apiCall('getPdf', { fileId: fileId });
-        if (res?.success) {
-            const pdfData = atob(res.data);
-            const loadingTask = pdfjsLib.getDocument({ data: pdfData });
-            const pdf = await loadingTask.promise;
-            document.getElementById('pdf-pages').innerHTML = "";
-            for (let i = 1; i <= pdf.numPages; i++) {
-                const page = await pdf.getPage(i);
-                const viewport = page.getViewport({ scale: 1.5 });
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                canvas.height = viewport.height; canvas.width = viewport.width;
-                document.getElementById('pdf-pages').appendChild(canvas);
-                await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-            }
-        }
-    }
-    function closePdf() { document.getElementById('pdf-viewer').classList.add('hidden'); }
-    if (user) apiCall('checkUser');
-</script>
-</body>
-</html>
+    // ИСПРАВЛЕННАЯ ФУНКЦИЯ ЗАПРОСА ТЕЛЕФОНА
+    function requestPhone() {
+        addLog("Вызов SDK requestContact...");
+        tg.requestContact((success, event) => {
+            addLog("SDK Success: " + success);
