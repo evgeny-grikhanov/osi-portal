@@ -2,14 +2,13 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nest One Portal</title>
+    <title>Nest One Document Viewer</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <style>
-        body { margin: 0; background: #3e3e42; display: flex; flex-direction: column; align-items: center; font-family: sans-serif; }
-        canvas { margin: 15px 0; box-shadow: 0 0 20px rgba(0,0,0,0.6); max-width: 95%; background: white; }
-        #status { color: white; margin-top: 50px; text-align: center; }
-    </small></style>
+        body { margin: 0; background: #333; display: flex; flex-direction: column; align-items: center; font-family: sans-serif; }
+        canvas { margin: 15px 0; box-shadow: 0 0 15px rgba(0,0,0,0.5); max-width: 95%; background: white; }
+        #status { color: white; margin-top: 50px; font-size: 18px; text-align: center; }
+    </style>
 </head>
 <body>
     <div id="status">Загрузка защищенного документа...</div>
@@ -18,26 +17,27 @@
     <script>
         const params = new URLSearchParams(window.location.search);
         const fileId = params.get('fid');
-        const userName = params.get('name') || 'User';
+        const userName = params.get('name') || 'Собственник';
         const userId = params.get('id') || '';
+        const userRoom = params.get('room') || '---';
+        const dateStamp = params.get('date') || '';
         
-        // ВСТАВЬТЕ ВАШУ ССЫЛКУ /exec НИЖЕ
+        // ВСТАВЬТЕ ВАШУ ССЫЛКУ /exec
         const GAS_URL = 'https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec';
 
         async function init() {
             try {
                 const res = await fetch(`${GAS_URL}?action=getPdf&fid=${fileId}`);
                 const data = await res.json();
-                if (!data.success) throw new Error(data.error);
+                if (!data.success) throw new Error();
 
                 const pdfData = atob(data.base64);
-                const loadingTask = pdfjsLib.getDocument({data: pdfData});
-                const pdf = await loadingTask.promise;
+                const pdf = await pdfjsLib.getDocument({data: pdfData}).promise;
                 document.getElementById('status').style.display = 'none';
 
                 for (let i = 1; i <= pdf.numPages; i++) {
                     const page = await pdf.getPage(i);
-                    const viewport = page.getViewport({scale: 1.5});
+                    const viewport = page.getPage().getViewport({scale: 1.5});
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
                     canvas.height = viewport.height; canvas.width = viewport.width;
@@ -45,19 +45,20 @@
 
                     // ВОДЯНОЙ ЗНАК
                     ctx.save();
-                    ctx.font = "bold 22px Arial";
-                    ctx.fillStyle = "rgba(180, 180, 180, 0.25)";
+                    ctx.font = "bold 18px Arial";
+                    ctx.fillStyle = "rgba(180, 180, 180, 0.22)";
                     ctx.textAlign = "center";
                     ctx.translate(canvas.width / 2, canvas.height / 2);
                     ctx.rotate(-45 * Math.PI / 180);
-                    const watermarkText = `NEST ONE - ${userName} (ID:${userId})`;
-                    for (let x = -1000; x < 1000; x += 400) {
-                        for (let y = -1000; y < 1000; y += 150) { ctx.fillText(watermarkText, x, y); }
+
+                    const watermarkText = `${userName} | кв. ${userRoom} | ${dateStamp} | (${userId})`;
+                    for (let x = -1000; x < 1000; x += 450) {
+                        for (let y = -1000; y < 1000; y += 180) { ctx.fillText(watermarkText, x, y); }
                     }
                     ctx.restore();
                     document.getElementById('pdf-container').appendChild(canvas);
                 }
-            } catch (e) { document.getElementById('status').innerText = "Ошибка: " + e.message; }
+            } catch (e) { document.getElementById('status').innerText = "Ошибка доступа."; }
         }
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
         if(fileId) init();
