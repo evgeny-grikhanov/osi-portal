@@ -34,4 +34,258 @@
         select, input[type="file"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ccc; margin-bottom: 15px; background: #fff; font-size: 16px; }
 
         /* PDF Viewer */
-        #pdf-viewer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 10000; overflow-y: auto
+        #pdf-viewer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 10000; overflow-y: auto; }
+        .close-pdf { position: fixed; right: 20px; top: 20px; background: rgba(255,255,255,0.3); color: #fff; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 20px; z-index: 10001; }
+        canvas { display: block; margin: 10px auto; max-width: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+
+        /* Ошибки */
+        #debug-console { color: #ff3b30; font-size: 12px; margin-top: 15px; padding: 10px; border: 1px dashed #ff3b30; border-radius: 10px; display: none; white-space: pre-wrap; word-break: break-all; }
+    </style>
+</head>
+<body>
+
+    <div id="loader-screen">
+        <div class="spinner"></div>
+        <div id="loader-text">Синхронизация с базой...</div>
+        <div id="debug-console"></div>
+        <button id="retry-btn" class="btn hidden" style="width: 200px; margin-top: 20px;" onclick="location.reload()">Повторить</button>
+    </div>
+
+    <div id="screen-lang" class="hidden" style="text-align: center; margin-top: 15vh;">
+        <h2>Select Language</h2>
+        <p style="color: #8e8e93;">Выберите язык интерфейса</p>
+        <br>
+        <button class="btn" onclick="apiCall('setLang', {lang:'uz'})">O'zbekcha</button>
+        <button class="btn" onclick="apiCall('setLang', {lang:'ru'})">Русский</button>
+        <button class="btn" onclick="apiCall('setLang', {lang:'en'})">English</button>
+    </div>
+
+    <div id="screen-upload" class="hidden">
+        <h2 id="up-title">Регистрация</h2>
+        <p id="up-desc">Пожалуйста, загрузите необходимые документы.</p>
+        
+        <select id="doc-type">
+            </select>
+        
+        <div class="card">
+            <input type="file" id="file-input" accept="application/pdf,image/*">
+            <button class="btn" id="upload-btn" onclick="handleFileUpload()">Отправить файл</button>
+            <div id="upload-status" style="font-size: 14px; color: #4cd964; text-align: center;"></div>
+        </div>
+
+        <button class="btn btn-secondary" onclick="showScreen('screen-wait')">Я загрузил все файлы</button>
+    </div>
+
+    <div id="screen-wait" class="hidden" style="text-align: center; margin-top: 25vh;">
+        <div style="font-size: 60px;">⏳</div>
+        <h2 id="wait-title">На проверке</h2>
+        <p id="wait-desc">Ваши документы проверяются администратором. Обычно это занимает до 24 часов.</p>
+    </div>
+
+    <div id="screen-agenda" class="hidden">
+        <h2 id="agenda-title">Повестка собрания</h2>
+        <div id="agenda-container">
+            </div>
+    </div>
+
+    <div id="pdf-viewer" class="hidden">
+        <button class="close-pdf" onclick="closePdf()">✕</button>
+        <div id="pdf-pages"></div>
+    </div>
+
+<script>
+    // === КОНФИГУРАЦИЯ ===
+    const API_URL = "https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec"; 
+    // ====================
+
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    // Пытаемся получить данные пользователя (с защитой от редиректа Google)
+    let user = tg.initDataUnsafe?.user;
+    let currentLang = 'ru';
+
+    const UI_TEXTS = {
+        ru: { up_title: "Документы", up_desc: "Загрузите Паспорт и Кадастр", wait_title: "На проверке", wait_desc: "Доступ откроется после одобрения.", types: ["Паспорт / ID", "Кадастр", "Доверенность"], view: "Просмотр" },
+        uz: { up_title: "Hujjatlar", up_desc: "Pasport va Kadastrni yuklang", wait_title: "Tekshirilmoqda", wait_desc: "Kirish ruxsati tasdiqlangandan so'ng ochiladi.", types: ["Pasport / ID", "Kadastr", "Ishonchnoma"], view: "Ko'rish" },
+        en: { up_title: "Documents", up_desc: "Upload Passport and Cadastre", wait_title: "Under Review", wait_desc: "Access will be granted after approval.", types: ["Passport / ID", "Cadastre", "Power of Attorney"], view: "View" }
+    };
+
+    // --- ФУНКЦИЯ ВЗАИМОДЕЙСТВИЯ С GOOGLE (API) ---
+    async function apiCall(action, payload = {}) {
+        if (!user) { showDebug("No User Data"); return; }
+        
+        showLoader(true);
+        payload.action = action;
+        payload.tgId = user.id;
+        payload.name = user.first_name;
+
+        try {
+            // "Simple Request" - без кастомных заголовков, чтобы избежать блокировки CORS
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) throw new Error("HTTP Status " + response.status);
+            
+            const result = await response.json();
+            showLoader(false);
+            
+            if (result.success) {
+                if (action === 'setLang' || action === 'checkUser') {
+                    handleRouting(result);
+                }
+                return result;
+            } else {
+                showDebug("Server Error: " + result.error);
+            }
+        } catch (err) {
+            showDebug("Connection Error: " + err.message);
+            document.getElementById('retry-btn').classList.remove('hidden');
+        }
+    }
+
+    // --- МАРШРУТИЗАЦИЯ ---
+    function handleRouting(data) {
+        currentLang = data.lang || 'ru';
+        const status = data.status;
+
+        if (status === 'Новый') {
+            showScreen('screen-lang');
+        } else if (status === 'Регистрация' || status === 'PENDING') {
+            showUploadUI();
+        } else if (status === 'Активный' || status === 'ACTIVE') {
+            loadAgenda();
+        } else if (status === 'Запрет') {
+            document.body.innerHTML = "<h2 style='text-align:center;margin-top:40vh;'>Доступ запрещен администратором</h2>";
+        } else {
+            showScreen('screen-wait');
+        }
+    }
+
+    function showScreen(id) {
+        ['screen-lang', 'screen-upload', 'screen-wait', 'screen-agenda'].forEach(s => {
+            document.getElementById(s).classList.add('hidden');
+        });
+        document.getElementById(id).classList.remove('hidden');
+    }
+
+    function showUploadUI() {
+        showScreen('screen-upload');
+        const t = UI_TEXTS[currentLang];
+        document.getElementById('up-title').innerText = t.up_title;
+        document.getElementById('up-desc').innerText = t.up_desc;
+        const sel = document.getElementById('doc-type');
+        sel.innerHTML = "";
+        t.types.forEach(type => sel.add(new Option(type, type)));
+    }
+
+    async function handleFileUpload() {
+        const fileIn = document.getElementById('file-input');
+        const type = document.getElementById('doc-type').value;
+        if (!fileIn.files.length) { alert("Выберите файл"); return; }
+
+        const file = fileIn.files[0];
+        const btn = document.getElementById('upload-btn');
+        btn.innerText = "Загрузка...";
+        btn.disabled = true;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const base64 = e.target.result.split(',')[1];
+            const res = await apiCall('upload', {
+                base64: base64,
+                mime: file.type,
+                type: type
+            });
+            if (res && res.success) {
+                document.getElementById('upload-status').innerText = "✅ Файл успешно отправлен";
+                fileIn.value = "";
+            }
+            btn.innerText = "Отправить файл";
+            btn.disabled = false;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    async function loadAgenda() {
+        showScreen('screen-agenda');
+        const res = await apiCall('getAgenda');
+        if (res && res.success) {
+            const container = document.getElementById('agenda-container');
+            container.innerHTML = "";
+            res.agenda.forEach(item => {
+                let filesHtml = "";
+                item.files.forEach(f => {
+                    filesHtml += `
+                        <div style="display:flex; justify-content:space-between; align-items:center; background:#fff; padding:10px; border-radius:10px; margin-top:10px; border:1px solid #eee;">
+                            <span style="font-size:14px;">${f.name}</span>
+                            <button class="btn" style="width:auto; margin:0; padding:8px 15px; font-size:12px;" onclick="openPdf('${f.driveId}')">${UI_TEXTS[currentLang].view}</button>
+                        </div>`;
+                });
+                container.innerHTML += `
+                    <div class="card">
+                        <h3 style="margin-top:0;">${item.title}</h3>
+                        <p style="font-size:14px; color:#666;">${item.desc || ""}</p>
+                        ${filesHtml}
+                    </div>`;
+            });
+        }
+    }
+
+    async function openPdf(fileId) {
+        document.getElementById('pdf-viewer').classList.remove('hidden');
+        document.getElementById('pdf-pages').innerHTML = "<p style='color:white;text-align:center;margin-top:50px;'>Загрузка документа...</p>";
+        
+        const res = await apiCall('getPdf', { fileId: fileId });
+        if (res && res.success) {
+            const pdfData = atob(res.data);
+            const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+            const pdf = await loadingTask.promise;
+            document.getElementById('pdf-pages').innerHTML = "";
+            
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const viewport = page.getViewport({ scale: 1.5 });
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                document.getElementById('pdf-pages').appendChild(canvas);
+                
+                await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                
+                // Водяной знак для безопасности (ID пользователя)
+                ctx.save();
+                ctx.globalAlpha = 0.15;
+                ctx.font = "30px Arial";
+                ctx.fillStyle = "red";
+                ctx.textAlign = "center";
+                ctx.translate(canvas.width/2, canvas.height/2);
+                ctx.rotate(-Math.PI/4);
+                ctx.fillText(`PROPERTY OF NEST ONE - ID:${user.id}`, 0, 0);
+                ctx.restore();
+            }
+        }
+    }
+
+    function closePdf() { document.getElementById('pdf-viewer').classList.add('hidden'); }
+    function showLoader(v) { document.getElementById('loader-screen').classList.toggle('hidden', !v); }
+    function showDebug(msg) {
+        const console = document.getElementById('debug-console');
+        console.style.display = 'block';
+        console.innerText += "> " + msg + "\n";
+    }
+
+    // --- ЗАПУСК ---
+    if (!user) {
+        showDebug("Ошибка: Данные Telegram не получены. Откройте приложение через бота.");
+    } else {
+        apiCall('checkUser');
+    }
+
+</script>
+</body>
+</html>
