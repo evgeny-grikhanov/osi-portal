@@ -18,7 +18,7 @@
         // Функция получения PDF из GAS
         async function loadPdf() {
             // Здесь мы вызываем ваш GAS скрипт (нужно добавить функцию getPdf в Code.gs)
-            const response = await fetch(`ВАША_ССЫЛКА_GAS?action=getPdf&fid=${fileId}`);
+            const response = await fetch(`https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec?action=getPdf&fid=${fileId}`);
             const data = await response.json();
             const pdfData = atob(data.base64);
             
@@ -57,3 +57,4 @@
     </script>
 </body>
 </html>
+
