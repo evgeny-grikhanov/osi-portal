@@ -13,24 +13,25 @@
             --tg-btn-text: var(--tg-theme-button-text-color, #ffffff);
             --tg-hint: var(--tg-theme-hint-color, #8e8e93);
         }
-        body { font-family: -apple-system, sans-serif; background: #f0f2f5; color: var(--tg-text); margin: 0; padding: 0; }
+        body { font-family: -apple-system, sans-serif; background: #f0f2f5; color: var(--tg-text); margin: 0; padding: 0; overflow-x: hidden; }
         .app-container { background: var(--tg-bg); min-height: 100vh; margin: 0 auto; padding: 20px; box-sizing: border-box; }
         @media (min-width: 801px) { .app-container { width: 80%; box-shadow: 0 0 20px rgba(0,0,0,0.1); } }
         .hidden { display: none !important; }
         .btn { background: var(--tg-btn); color: var(--tg-btn-text); padding: 16px; width: 100%; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; margin-bottom: 12px; cursor: pointer; display: block; text-align: center; text-decoration: none; }
         .btn-secondary { background: var(--tg-hint); opacity: 0.8; }
         .card { border: 1px solid rgba(0,0,0,0.1); border-radius: 15px; padding: 15px; margin-bottom: 15px; background: rgba(127,127,127,0.05); }
+        select, input[type="file"] { width: 100%; padding: 14px; border-radius: 10px; border: 1px solid #ccc; margin-bottom: 15px; font-size: 16px; background: #fff; }
         #loader-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--tg-bg); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; }
         .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid var(--tg-btn); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        #debug-log { background: #1c1c1c; color: #00ff00; padding: 10px; font-family: monospace; font-size: 10px; margin-top: 20px; border-radius: 8px; text-align: left; max-height: 150px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+        #debug-log { background: #1c1c1c; color: #00ff00; padding: 10px; font-family: monospace; font-size: 10px; margin-top: 20px; border-radius: 8px; text-align: left; max-height: 120px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
     </style>
 </head>
 <body>
 
     <div id="loader-screen">
         <div class="spinner"></div>
-        <div id="loader-status">Загрузка...</div>
+        <div id="loader-status">Синхронизация...</div>
     </div>
 
     <div class="app-container">
@@ -42,19 +43,19 @@
 
         <div id="screen-phone" class="hidden" style="text-align: center; padding-top: 5vh;">
             <h2 id="ph-title">Верификация</h2>
-            <p id="ph-desc">Нажмите кнопку, чтобы подтвердить номер.</p>
+            <p id="ph-desc">...</p>
             <br>
             <button class="btn" onclick="requestPhone()">📱 Поделиться номером телефона</button>
             <button class="btn btn-secondary" onclick="tg.close()">Закрыть</button>
-            
-            <div id="debug-log">Log: Ожидание действий...</div>
+            <div id="debug-log">System: Ready</div>
         </div>
 
         <div id="screen-upload" class="hidden">
             <h2 id="up-title">Документы</h2>
-            <select id="doc-type" style="width:100%; padding:12px; margin-bottom:15px; border-radius:10px;"></select>
+            <p id="up-desc" style="color: var(--tg-hint); margin-bottom: 15px;"></p>
+            <select id="doc-type"></select>
             <div class="card">
-                <input type="file" id="file-input" accept="application/pdf,image/*" style="margin-bottom:15px;">
+                <input type="file" id="file-input" accept="application/pdf,image/*">
                 <button class="btn" id="upload-btn" onclick="handleFileUpload()">Отправить файл</button>
                 <div id="upload-status" style="text-align:center; color:#4cd964; font-weight:bold;"></div>
             </div>
@@ -79,13 +80,12 @@
 
     function addLog(m) {
         const log = document.getElementById('debug-log');
-        log.innerHTML += "\n> " + m;
-        log.scrollTop = log.scrollHeight;
+        if(log) { log.innerHTML += "\n> " + m; log.scrollTop = log.scrollHeight; }
     }
 
     const UI_TEXTS = {
-        ru: { ph_title: "Верификация", ph_desc: "Это необходимо для доступа к документам ОСИ Nest One.", types: ["Паспорт / ID", "Кадастр", "Доверенность"] },
-        uz: { ph_title: "Verifikatsiya", ph_desc: "Nest One OSI hujjatlariga kirish uchun raqamingizni tasdiqlang.", types: ["Pasport / ID", "Kadastr", "Ishonchnoma"] }
+        ru: { ph_title: "Верификация", ph_desc: "Подтвердите номер телефона для доступа к порталу Nest One.", up_title: "Документы", up_desc: "Загрузите Паспорт, Кадастр или Доверенность.", types: ["Паспорт / ID", "Кадастр", "Доверенность"] },
+        uz: { ph_title: "Verifikatsiya", ph_desc: "Nest One portaliga kirish uchun raqamingizni tasdiqlang.", up_title: "Hujjatlar", up_desc: "Pasport, Kadastr yoki Ishonchnomani yuklang.", types: ["Pasport / ID", "Kadastr", "Ishonchnoma"] }
     };
 
     async function apiCall(action, payload = {}) {
@@ -104,6 +104,8 @@
         } catch (e) {
             document.getElementById('loader-screen').classList.add('hidden');
             addLog("API Error: " + e.message);
+            // Форсируем обновление при ошибке записи номера (CORS)
+            if(action === 'updatePhone') setTimeout(() => apiCall('checkUser'), 2000);
         }
     }
 
@@ -135,8 +137,65 @@
         document.getElementById('ph-desc').innerText = t.ph_desc;
     }
 
-    // ИСПРАВЛЕННАЯ ФУНКЦИЯ ЗАПРОСА ТЕЛЕФОНА
     function requestPhone() {
-        addLog("Вызов SDK requestContact...");
+        addLog("Запрос SDK...");
         tg.requestContact((success, event) => {
-            addLog("SDK Success: " + success);
+            if (success) {
+                // Извлекаем номер всеми возможными путями
+                const phone = event?.contact?.phone_number || event?.response?.contact?.phone_number;
+                if (phone) {
+                    addLog("Найден: " + phone);
+                    apiCall('updatePhone', { phone: phone });
+                    
+                    // Резервное обновление экрана через 4 секунды
+                    setTimeout(() => {
+                        if(!document.getElementById('screen-phone').classList.contains('hidden')) {
+                            addLog("Задержка. Обновляю статус...");
+                            apiCall('checkUser');
+                        }
+                    }, 4000);
+                } else {
+                    addLog("Ошибка: Номер пуст.");
+                }
+            }
+        });
+    }
+
+    function showUploadUI(lang) {
+        showScreen('screen-upload');
+        const t = UI_TEXTS[lang] || UI_TEXTS.ru;
+        document.getElementById('up-title').innerText = t.up_title;
+        document.getElementById('up-desc').innerText = t.up_desc;
+        const sel = document.getElementById('doc-type');
+        sel.innerHTML = "";
+        t.types.forEach(type => sel.add(new Option(type, type)));
+    }
+
+    async function handleFileUpload() {
+        const fileIn = document.getElementById('file-input');
+        const type = document.getElementById('doc-type').value;
+        if (!fileIn.files.length) return alert("Файл не выбран");
+        const btn = document.getElementById('upload-btn');
+        const status = document.getElementById('upload-status');
+        btn.innerText = "Загрузка...";
+        btn.disabled = true;
+
+        const file = fileIn.files[0];
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const base64 = e.target.result.split(',')[1];
+            const res = await apiCall('upload', { base64: base64, mime: file.type, type: type });
+            if (res?.success) {
+                status.innerText = "✅ Файл успешно отправлен";
+                fileIn.value = "";
+            }
+            btn.innerText = "Отправить файл";
+            btn.disabled = false;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    if (user) apiCall('checkUser');
+</script>
+</body>
+</html>
