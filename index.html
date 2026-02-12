@@ -24,72 +24,77 @@
             margin: 0 auto;
             padding: 20px;
             box-sizing: border-box;
-            box-shadow: 0 0 10px rgba(0,0,0,0.05);
+            transition: width 0.3s ease;
         }
 
-        /* Адаптивность: 80% на ПК */
-        @media (min-width: 801px) { .app-container { width: 80%; } }
+        /* 80% на ПК, 100% на мобильных */
+        @media (min-width: 801px) { .app-container { width: 80%; box-shadow: 0 0 20px rgba(0,0,0,0.1); } }
         @media (max-width: 800px) { .app-container { width: 100%; } }
 
         .hidden { display: none !important; }
-        .btn { background: var(--tg-btn); color: var(--tg-btn-text); padding: 15px; width: 100%; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; margin-bottom: 12px; cursor: pointer; display: block; text-align: center; text-decoration: none;}
+        .btn { background: var(--tg-btn); color: var(--tg-btn-text); padding: 16px; width: 100%; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; margin-bottom: 12px; cursor: pointer; display: block; text-align: center; }
         .btn-secondary { background: var(--tg-hint); opacity: 0.8; }
         .card { border: 1px solid rgba(0,0,0,0.1); border-radius: 15px; padding: 15px; margin-bottom: 15px; background: rgba(127,127,127,0.05); }
-        select, input[type="file"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ccc; margin-bottom: 15px; font-size: 16px; }
         
         #loader-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--tg-bg); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; }
         .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid var(--tg-btn); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-        #debug-log { background: #000; color: #0f0; padding: 10px; font-family: monospace; font-size: 11px; border-radius: 8px; margin-top: 20px; max-height: 100px; overflow-y: auto; text-align: left;}
+        
+        #pdf-viewer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 10000; overflow-y: auto; }
+        .close-pdf { position: fixed; right: 20px; top: 20px; background: rgba(255,255,255,0.3); color: #fff; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 20px; }
+        canvas { display: block; margin: 10px auto; max-width: 100%; }
     </style>
 </head>
 <body>
 
-    <div id="loader-screen" class="hidden">
+    <div id="loader-screen">
         <div class="spinner"></div>
-        <div id="loader-status">Пожалуйста, подождите...</div>
+        <div id="loader-status">Инициализация...</div>
     </div>
 
     <div class="app-container">
-        <div id="screen-lang" class="hidden" style="text-align: center; padding-top: 5vh;">
+        <div id="screen-lang" class="hidden" style="text-align: center; padding-top: 10vh;">
             <h2>Tilni tanlang / Выберите язык</h2>
+            <br>
             <button class="btn" onclick="apiCall('setLang', {lang:'uz'})">O'zbekcha</button>
             <button class="btn" onclick="apiCall('setLang', {lang:'ru'})">Русский</button>
             <button class="btn" onclick="apiCall('setLang', {lang:'en'})">English</button>
         </div>
 
-        <div id="screen-phone" class="hidden" style="text-align: center; padding-top: 5vh;">
+        <div id="screen-phone" class="hidden" style="text-align: center; padding-top: 10vh;">
             <h2 id="ph-title">Верификация</h2>
-            <p id="ph-desc">Для регистрации в системе Nest One подтвердите ваш номер телефона.</p>
+            <p id="ph-desc">Подтвердите ваш номер для регистрации в Nest One.</p>
             <br>
-            <button class="btn" onclick="handlePhoneRequest()">📱 Поделиться номером телефона</button>
+            <button class="btn" onclick="requestPhone()">📱 Поделиться номером телефона</button>
             <button class="btn btn-secondary" onclick="refusePhone()">Я не хочу делиться номером</button>
-            
-            <div id="debug-log">Log: System ready.</div>
         </div>
 
         <div id="screen-upload" class="hidden">
             <h2 id="up-title">Документы</h2>
-            <p id="up-desc">...</p>
-            <select id="doc-type"></select>
+            <p id="up-desc">Загрузите подтверждающие файлы.</p>
+            <select id="doc-type" style="width:100%; padding:12px; margin-bottom:15px; border-radius:10px; border:1px solid #ccc;"></select>
             <div class="card">
-                <input type="file" id="file-input" accept="application/pdf,image/*">
+                <input type="file" id="file-input" accept="application/pdf,image/*" style="margin-bottom:15px;">
                 <button class="btn" id="upload-btn" onclick="handleFileUpload()">Отправить файл</button>
-                <div id="upload-status" style="text-align:center; color:#4cd964; margin-top:10px;"></div>
+                <div id="upload-status" style="text-align:center; color:#4cd964; font-weight:bold;"></div>
             </div>
-            <button class="btn btn-secondary" onclick="showScreen('screen-wait')">Все документы загружены</button>
+            <button class="btn btn-secondary" onclick="showScreen('screen-wait')">Готово</button>
         </div>
 
-        <div id="screen-wait" class="hidden" style="text-align: center; padding-top: 20vh;">
+        <div id="screen-wait" class="hidden" style="text-align: center; padding-top: 25vh;">
             <div style="font-size: 60px;">⏳</div>
             <h2 id="wait-title">Проверка</h2>
-            <p id="wait-desc">...</p>
+            <p id="wait-desc">Ваши данные на модерации.</p>
         </div>
 
         <div id="screen-agenda" class="hidden">
             <h2 id="agenda-title">Повестка</h2>
             <div id="agenda-container"></div>
+        </div>
+
+        <div id="pdf-viewer" class="hidden">
+            <button class="close-pdf" onclick="closePdf()">✕</button>
+            <div id="pdf-pages"></div>
         </div>
     </div>
 
@@ -103,33 +108,27 @@
     const user = tg.initDataUnsafe?.user;
     let currentLang = 'ru';
 
-    function addLog(msg) {
-        const log = document.getElementById('debug-log');
-        if(log) log.innerHTML += "<br>> " + msg;
-        console.log(msg);
-    }
-
     const UI_TEXTS = {
         ru: {
-            ph_title: "Верификация", ph_desc: "Нажмите на кнопку ниже, чтобы система верифицировала ваш номер телефона.",
-            up_title: "Собственность", up_desc: "Загрузите паспорт, кадастр или доверенность.",
-            refuse: "Для получения разъяснений обратитесь в клиентский отдел Nest One.",
+            ph_title: "Верификация", ph_desc: "Нажмите на кнопку ниже, чтобы предоставить номер телефона.",
+            up_title: "Собственность", up_desc: "Загрузите Паспорт, Кадастр или Доверенность.",
+            refuse: "Для регистрации обратитесь в клиентский отдел Nest One.",
             types: ["Паспорт / ID", "Кучерма (Кадастр)", "Доверенность"],
-            wait_title: "На проверке", wait_desc: "Доступ к повестке будет открыт после модерации.", view: "Открыть"
+            wait_title: "На проверке", wait_desc: "Доступ откроется после одобрения администратором.", view: "Открыть"
         },
         uz: {
-            ph_title: "Verifikatsiya", ph_desc: "Raqamingizni tasdiqlash uchun quyidagi tugmani bosing.",
+            ph_title: "Verifikatsiya", ph_desc: "Raqamingizni yuborish uchun quyidagi tugmani bosing.",
             up_title: "Mulk", up_desc: "Pasport, kadastr yoki ishonchnomani yuklang.",
-            refuse: "Tushuntirish olish uchun Nest One mijozlar bo'limiga murojaat qiling.",
+            refuse: "Ro'yxatdan o'tish uchun Nest One mijozlar bo'limiga murojaat qiling.",
             types: ["Pasport / ID", "Ko'chirma (Kadastr)", "Ishonchnoma"],
             wait_title: "Tekshirilmoqda", wait_desc: "Moderatsiyadan so'ng ruxsat beriladi.", view: "Ko'rish"
         },
         en: {
-            ph_title: "Verification", ph_desc: "Click below to share your phone number for verification.",
-            up_title: "Property", up_desc: "Upload passport, cadastre, or power of attorney.",
-            refuse: "Please contact Nest One client service for instructions.",
+            ph_title: "Verification", ph_desc: "Click below to share your phone number.",
+            up_title: "Property", up_desc: "Upload passport, cadastre or proxy.",
+            refuse: "Please contact Nest One client department for registration.",
             types: ["Passport / ID", "Cadastral Passport", "Power of Attorney"],
-            wait_title: "Reviewing", wait_desc: "Access granted after review.", view: "View"
+            wait_title: "Pending", wait_desc: "Access will be granted after review.", view: "View"
         }
     };
 
@@ -139,42 +138,47 @@
         payload.action = action;
         payload.tgId = user.id;
         payload.name = user.first_name;
-        
-        addLog("API Request: " + action);
-        
+
         try {
             const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
             const data = await res.json();
             document.getElementById('loader-screen').classList.add('hidden');
             if (data.success) {
-                addLog("API Success: " + action);
                 handleRouting(data);
             } else {
-                addLog("API Error: " + data.error);
-                alert(data.error);
+                alert("Ошибка: " + data.error);
             }
             return data;
         } catch (e) {
             document.getElementById('loader-screen').classList.add('hidden');
-            addLog("Network Fail: " + e.message);
-            alert("Ошибка сети: " + e.message);
+            alert("Сбой сети. Повторите попытку.");
         }
     }
 
     function handleRouting(data) {
-        currentLang = data.lang || 'ru';
+        currentLang = data.lang || '';
+        const phone = data.phone || '';
         const status = data.status;
-        
-        addLog(`Router: Stat=${status}, Lang=${data.lang}, Phone=${data.hasPhone}`);
 
-        if (!data.lang) {
+        // 1. ПРОВЕРКА ЯЗЫКА
+        if (!currentLang) {
             showScreen('screen-lang');
-        } else if (!data.hasPhone && status !== 'Активный') {
+            return;
+        }
+
+        // 2. ПРОВЕРКА ТЕЛЕФОНА (Если не админ/активный)
+        if (!phone && status !== 'Активный') {
             showPhoneUI();
-        } else if (status === 'Регистрация' || status === 'PENDING') {
+            return;
+        }
+
+        // 3. ПРОВЕРКА СТАТУСА
+        if (status === 'Новый' || status === 'Регистрация' || status === 'PENDING') {
             showUploadUI();
         } else if (status === 'Активный') {
             loadAgenda();
+        } else if (status === 'Запрет') {
+            document.body.innerHTML = `<h3 style='padding:50px; text-align:center;'>${UI_TEXTS[currentLang].refuse}</h3>`;
         } else {
             showScreen('screen-wait');
             updateWaitText();
@@ -183,48 +187,42 @@
 
     function showScreen(id) {
         ['screen-lang', 'screen-phone', 'screen-upload', 'screen-wait', 'screen-agenda'].forEach(s => {
-            const el = document.getElementById(s);
-            if(el) el.classList.add('hidden');
+            document.getElementById(s).classList.add('hidden');
         });
         document.getElementById(id).classList.remove('hidden');
     }
 
     function showPhoneUI() {
         showScreen('screen-phone');
-        const t = UI_TEXTS[currentLang];
+        const t = UI_TEXTS[currentLang] || UI_TEXTS.ru;
         document.getElementById('ph-title').innerText = t.ph_title;
         document.getElementById('ph-desc').innerText = t.ph_desc;
     }
 
-    function handlePhoneRequest() {
-        addLog("Requesting contact...");
-        try {
-            tg.requestContact((success, response) => {
-                if (success) {
-                    addLog("Contact received!");
-                    const phone = response.response.contact.phone_number;
-                    apiCall('updatePhone', { phone: phone });
-                } else {
-                    addLog("User denied or SDK Error.");
-                }
-            });
-        } catch (e) {
-            addLog("SDK Fatal: " + e.message);
-        }
+    // НОВЫЙ МЕТОД ЗАПРОСА ТЕЛЕФОНА
+    function requestPhone() {
+        tg.requestContact((success, response) => {
+            if (success && response.response && response.response.contact) {
+                const phone = response.response.contact.phone_number;
+                apiCall('updatePhone', { phone: phone });
+            } else {
+                console.log("Phone request failed or cancelled");
+            }
+        });
     }
 
     function refusePhone() {
+        const t = UI_TEXTS[currentLang] || UI_TEXTS.ru;
         tg.showPopup({
             title: 'Nest One',
-            message: UI_TEXTS[currentLang].refuse,
+            message: t.refuse,
             buttons: [{type: 'close'}]
         }, () => tg.close());
     }
 
-    // --- Функции загрузки и повестки (оставляем как в рабочем коде) ---
     function showUploadUI() {
         showScreen('screen-upload');
-        const t = UI_TEXTS[currentLang];
+        const t = UI_TEXTS[currentLang] || UI_TEXTS.ru;
         document.getElementById('up-title').innerText = t.up_title;
         document.getElementById('up-desc').innerText = t.up_desc;
         const sel = document.getElementById('doc-type');
@@ -233,7 +231,7 @@
     }
 
     function updateWaitText() {
-        const t = UI_TEXTS[currentLang];
+        const t = UI_TEXTS[currentLang] || UI_TEXTS.ru;
         document.getElementById('wait-title').innerText = t.wait_title;
         document.getElementById('wait-desc').innerText = t.wait_desc;
     }
@@ -243,17 +241,20 @@
         const type = document.getElementById('doc-type').value;
         if (!fileIn.files.length) return alert("Файл не выбран");
         const btn = document.getElementById('upload-btn');
-        btn.innerText = "...";
+        btn.innerText = "Загрузка...";
+        btn.disabled = true;
+
         const file = fileIn.files[0];
         const reader = new FileReader();
         reader.onload = async (e) => {
             const base64 = e.target.result.split(',')[1];
             const res = await apiCall('upload', { base64: base64, mime: file.type, type: type });
             if (res && res.success) {
-                document.getElementById('upload-status').innerText = "✅ Загружено";
+                document.getElementById('upload-status').innerText = "✅ Отправлено";
                 fileIn.value = "";
             }
             btn.innerText = "Отправить файл";
+            btn.disabled = false;
         };
         reader.readAsDataURL(file);
     }
@@ -270,18 +271,35 @@
                     filesHtml += `
                         <div style="display:flex; justify-content:space-between; align-items:center; background:#fff; padding:10px; border-radius:10px; margin-top:10px; border:1px solid #eee;">
                             <span style="font-size:14px;">${f.name}</span>
-                            <button class="btn" style="width:auto; margin:0; padding:8px 15px; font-size:12px;" onclick="alert('PDF loading...')">${UI_TEXTS[currentLang].view}</button>
+                            <button class="btn" style="width:auto; margin:0; padding:8px 15px; font-size:12px;" onclick="openPdf('${f.driveId}')">${UI_TEXTS[currentLang].view}</button>
                         </div>`;
                 });
-                container.innerHTML += `
-                    <div class="card">
-                        <h3 style="margin-top:0;">${item.title}</h3>
-                        <p style="font-size:14px; color:#666;">${item.desc || ""}</p>
-                        ${filesHtml}
-                    </div>`;
+                container.innerHTML += `<div class="card"><h3>${item.title}</h3><p>${item.desc || ""}</p>${filesHtml}</div>`;
             });
         }
     }
+
+    async function openPdf(fileId) {
+        document.getElementById('pdf-viewer').classList.remove('hidden');
+        document.getElementById('pdf-pages').innerHTML = "<p style='color:white;text-align:center;padding:50px;'>Загрузка...</p>";
+        const res = await apiCall('getPdf', { fileId: fileId });
+        if (res && res.success) {
+            const pdfData = atob(res.data);
+            const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+            const pdf = await loadingTask.promise;
+            document.getElementById('pdf-pages').innerHTML = "";
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const viewport = page.getViewport({ scale: 1.5 });
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.height = viewport.height; canvas.width = viewport.width;
+                document.getElementById('pdf-pages').appendChild(canvas);
+                await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+            }
+        }
+    }
+    function closePdf() { document.getElementById('pdf-viewer').classList.add('hidden'); }
 
     if (user) apiCall('checkUser');
 </script>
