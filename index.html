@@ -3,89 +3,64 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nest One Document Viewer</title>
+    <title>Nest One Portal</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <style>
         body { margin: 0; background: #3e3e42; display: flex; flex-direction: column; align-items: center; font-family: sans-serif; }
-        #pdf-container { width: 100%; display: flex; flex-direction: column; align-items: center; }
         canvas { margin: 15px 0; box-shadow: 0 0 20px rgba(0,0,0,0.6); max-width: 95%; background: white; }
-        #status { color: white; margin-top: 50px; font-size: 18px; text-align: center; padding: 20px; }
-    </style>
+        #status { color: white; margin-top: 50px; text-align: center; }
+    </small></style>
 </head>
 <body>
-    <div id="status">Загрузка защищенного документа...<br><small>(Это может занять до 10 секунд)</small></div>
+    <div id="status">Загрузка защищенного документа...</div>
     <div id="pdf-container"></div>
 
     <script>
         const params = new URLSearchParams(window.location.search);
         const fileId = params.get('fid');
-        const userName = params.get('name') || 'Собственник';
+        const userName = params.get('name') || 'User';
         const userId = params.get('id') || '';
         
-        // ВАЖНО: Ссылка должна быть актуальной!
+        // ВСТАВЬТЕ ВАШУ ССЫЛКУ /exec НИЖЕ
         const GAS_URL = 'https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec';
 
         async function init() {
-            if (!fileId) {
-                document.getElementById('status').innerText = "Ошибка: ID файла не указан.";
-                return;
-            }
-
             try {
-                // Используем fetch с явным указанием метода
-                const response = await fetch(`${GAS_URL}?action=getPdf&fid=${fileId}`);
-                const data = await response.json();
-
-                if (!data.success || !data.base64) {
-                    throw new Error(data.error || "Файл не найден");
-                }
+                const res = await fetch(`${GAS_URL}?action=getPdf&fid=${fileId}`);
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error);
 
                 const pdfData = atob(data.base64);
                 const loadingTask = pdfjsLib.getDocument({data: pdfData});
                 const pdf = await loadingTask.promise;
-                
                 document.getElementById('status').style.display = 'none';
 
                 for (let i = 1; i <= pdf.numPages; i++) {
-                    await renderPage(pdf, i);
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({scale: 1.5});
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.height = viewport.height; canvas.width = viewport.width;
+                    await page.render({canvasContext: ctx, viewport: viewport}).promise;
+
+                    // ВОДЯНОЙ ЗНАК
+                    ctx.save();
+                    ctx.font = "bold 22px Arial";
+                    ctx.fillStyle = "rgba(180, 180, 180, 0.25)";
+                    ctx.textAlign = "center";
+                    ctx.translate(canvas.width / 2, canvas.height / 2);
+                    ctx.rotate(-45 * Math.PI / 180);
+                    const watermarkText = `NEST ONE - ${userName} (ID:${userId})`;
+                    for (let x = -1000; x < 1000; x += 400) {
+                        for (let y = -1000; y < 1000; y += 150) { ctx.fillText(watermarkText, x, y); }
+                    }
+                    ctx.restore();
+                    document.getElementById('pdf-container').appendChild(canvas);
                 }
-            } catch (e) {
-                console.error(e);
-                document.getElementById('status').innerHTML = `Ошибка загрузки.<br><small>${e.message}</small>`;
-            }
+            } catch (e) { document.getElementById('status').innerText = "Ошибка: " + e.message; }
         }
-
-        async function renderPage(pdf, num) {
-            const page = await pdf.getPage(num);
-            const viewport = page.getViewport({scale: 1.5});
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-
-            await page.render({canvasContext: ctx, viewport: viewport}).promise;
-
-            // НАЛОЖЕНИЕ ВОДЯНОГО ЗНАКА
-            ctx.save();
-            ctx.font = "bold 22px Arial";
-            ctx.fillStyle = "rgba(180, 180, 180, 0.25)";
-            ctx.textAlign = "center";
-            ctx.translate(canvas.width / 2, canvas.height / 2);
-            ctx.rotate(-45 * Math.PI / 180);
-
-            const watermarkText = `NEST ONE - ${userName} (ID:${userId})`;
-            for (let x = -1000; x < 1000; x += 400) {
-                for (let y = -1000; y < 1000; y += 200) {
-                    ctx.fillText(watermarkText, x, y);
-                }
-            }
-            ctx.restore();
-            document.getElementById('pdf-container').appendChild(canvas);
-        }
-
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-        init();
+        if(fileId) init();
     </script>
 </body>
 </html>
-
