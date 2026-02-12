@@ -1,249 +1,59 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Nest One Portal</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
-
     <style>
-        :root {
-            --tg-bg: var(--tg-theme-bg-color, #ffffff);
-            --tg-text: var(--tg-theme-text-color, #000000);
-            --tg-btn: var(--tg-theme-button-color, #3390ec);
-            --tg-btn-text: var(--tg-theme-button-text-color, #ffffff);
-            --tg-hint: var(--tg-theme-hint-color, #8e8e93);
-        }
-        body { font-family: -apple-system, sans-serif; background: #f0f2f5; color: var(--tg-text); margin: 0; padding: 0; overflow-x: hidden; }
-        .app-container { background: var(--tg-bg); min-height: 100vh; margin: 0 auto; padding: 20px; box-sizing: border-box; }
-        @media (min-width: 801px) { .app-container { width: 80%; box-shadow: 0 0 20px rgba(0,0,0,0.1); } }
-        .hidden { display: none !important; }
-        .btn { background: var(--tg-btn); color: var(--tg-btn-text); padding: 16px; width: 100%; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; margin-bottom: 12px; cursor: pointer; display: block; text-align: center; text-decoration: none; box-sizing: border-box; }
-        .btn-secondary { background: var(--tg-hint); opacity: 0.8; }
-        .card { border: 1px solid rgba(0,0,0,0.1); border-radius: 15px; padding: 15px; margin-bottom: 15px; background: rgba(127,127,127,0.05); }
-        select, input[type="file"] { width: 100%; padding: 14px; border-radius: 10px; border: 1px solid #ccc; margin-bottom: 15px; font-size: 16px; background: #fff; color: #000; box-sizing: border-box; }
-        #loader-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--tg-bg); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid var(--tg-btn); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        #pdf-viewer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 10000; overflow-y: auto; }
-        .close-pdf { position: fixed; right: 20px; top: 20px; background: rgba(255,255,255,0.3); color: #fff; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 20px; cursor: pointer; }
-        canvas { display: block; margin: 10px auto; max-width: 100%; }
+        body { margin: 0; background: #525659; display: flex; flex-direction: column; align-items: center; }
+        canvas { box-shadow: 0 0 10px rgba(0,0,0,0.5); margin: 10px; max-width: 100%; }
     </style>
 </head>
 <body>
+    <div id="container"></div>
 
-    <div id="loader-screen">
-        <div class="spinner"></div>
-        <div id="loader-status">Синхронизация...</div>
-    </div>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const fileId = params.get('fid');
+        const userId = params.get('uid');
 
-    <div class="app-container">
-        <div id="screen-lang" class="hidden" style="text-align: center; padding-top: 5vh;">
-            <h2>Tilni tanlang / Язык</h2>
-            <button class="btn" onclick="apiCall('setLang', {lang:'uz'})">O'zbekcha</button>
-            <button class="btn" onclick="apiCall('setLang', {lang:'ru'})">Русский</button>
-        </div>
+        // Функция получения PDF из GAS
+        async function loadPdf() {
+            // Здесь мы вызываем ваш GAS скрипт (нужно добавить функцию getPdf в Code.gs)
+            const response = await fetch(`ВАША_ССЫЛКА_GAS?action=getPdf&fid=${fileId}`);
+            const data = await response.json();
+            const pdfData = atob(data.base64);
+            
+            const pdf = await pdfjsLib.getDocument({data: pdfData}).promise;
+            const container = document.getElementById('container');
 
-        <div id="screen-phone" class="hidden" style="text-align: center; padding-top: 5vh;">
-            <h2 id="ph-title">Верификация</h2>
-            <p id="ph-desc">...</p>
-            <br>
-            <button class="btn" onclick="requestPhone()">📱 Поделиться номером телефона</button>
-            <div style="margin: 25px 0; border-top: 1px solid #ddd; padding-top: 20px;">
-                <p style="color: var(--tg-hint); font-size: 14px;">Если кнопка выше не срабатывает:</p>
-                <button class="btn btn-secondary" onclick="tg.close()">Закрыть и отправить в чат бота</button>
-            </div>
-        </div>
-
-        <div id="screen-upload" class="hidden">
-            <h2 id="up-title">Документы</h2>
-            <p id="up-desc" style="color: var(--tg-hint); margin-bottom: 15px;"></p>
-            <select id="doc-type"></select>
-            <div class="card">
-                <input type="file" id="file-input" accept="application/pdf,image/*">
-                <button class="btn" id="upload-btn" onclick="handleFileUpload()">Отправить файл</button>
-                <div id="upload-status" style="text-align:center; color:#4cd964; font-weight:bold; margin-top:10px;"></div>
-            </div>
-            <button class="btn btn-secondary" onclick="apiCall('finishRegistration')">Я всё загрузил</button>
-            <button class="btn btn-secondary" style="background:#ff3b30" onclick="tg.close()">Отказаться от загрузки</button>
-        </div>
-
-        <div id="screen-wait" class="hidden" style="text-align: center; padding-top: 20vh;">
-            <div style="font-size: 60px;">⏳</div>
-            <h2 id="wait-title">Проверка</h2>
-            <p id="wait-desc">Ваши данные на модерации.</p>
-        </div>
-
-        <div id="screen-agenda" class="hidden">
-            <h2 id="agenda-title">Повестка собрания</h2>
-            <div id="agenda-container"></div>
-        </div>
-
-        <div id="pdf-viewer" class="hidden">
-            <button class="close-pdf" onclick="closePdf()">✕</button>
-            <div id="pdf-pages"></div>
-        </div>
-    </div>
-
-<script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec"; 
-
-    const tg = window.Telegram.WebApp;
-    tg.ready(); tg.expand();
-
-    const user = tg.initDataUnsafe?.user;
-
-    const UI_TEXTS = {
-        ru: {
-            ph_title: "Верификация", ph_desc: "Подтвердите ваш номер телефона для доступа к документам.",
-            up_title: "Документы", up_desc: "Загрузите Паспорт, Кадастр или Доверенность.",
-            types: ["Паспорт / ID", "Кучерма (Кадастр)", "Доверенность"],
-            wait_title: "На модерации", wait_desc: "Данные приняты. Доступ к повестке откроется после одобрения."
-        },
-        uz: {
-            ph_title: "Verifikatsiya", ph_desc: "Hujjatlar bilan tanishish uchun telefon raqamingizni tasdiqlang.",
-            up_title: "Hujjatlar", up_desc: "Pasport, Kadastr yoki Ishonchnomani yuklang.",
-            types: ["Pasport / ID", "Ko'chirma (Kadastr)", "Ishonchnoma"],
-            wait_title: "Tekshirilmoqda", wait_desc: "Hujjatlar tasdiqlangandan so'ng kirish ruxsati beriladi."
-        }
-    };
-
-    async function apiCall(action, payload = {}) {
-        if (!user) return;
-        document.getElementById('loader-screen').classList.remove('hidden');
-        payload.action = action; payload.tgId = user.id; payload.name = user.first_name;
-        try {
-            const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
-            const data = await res.json();
-            document.getElementById('loader-screen').classList.add('hidden');
-            if (data.success) handleRouting(data);
-            return data;
-        } catch (e) {
-            document.getElementById('loader-screen').classList.add('hidden');
-        }
-    }
-
-    function handleRouting(data) {
-        const lang = data.lang || '';
-        const hasPh = data.hasPhone;
-        const status = data.status;
-
-        if (!lang) {
-            showScreen('screen-lang');
-        } else if (!hasPh && status !== 'Активный') {
-            showPhoneUI(lang);
-        } else if (status === 'Новый' || status === 'Регистрация') {
-            showUploadUI(lang);
-        } else if (status === 'PENDING') {
-            showScreen('screen-wait');
-            updateWaitText(lang);
-        } else if (status === 'Активный') {
-            loadAgenda();
-        } else {
-            showScreen('screen-wait');
-        }
-    }
-
-    function showScreen(id) {
-        ['screen-lang', 'screen-phone', 'screen-upload', 'screen-wait', 'screen-agenda'].forEach(s => document.getElementById(s).classList.add('hidden'));
-        document.getElementById(id).classList.remove('hidden');
-    }
-
-    function showPhoneUI(lang) {
-        showScreen('screen-phone');
-        const t = UI_TEXTS[lang] || UI_TEXTS.ru;
-        document.getElementById('ph-title').innerText = t.ph_title;
-        document.getElementById('ph-desc').innerText = t.ph_desc;
-    }
-
-    function requestPhone() {
-        tg.requestContact((success, event) => {
-            if (success) {
-                const phone = event?.contact?.phone_number || event?.response?.contact?.phone_number;
-                if (phone) apiCall('updatePhone', { phone: phone });
-            }
-        });
-    }
-
-    function showUploadUI(lang) {
-        showScreen('screen-upload');
-        const t = UI_TEXTS[lang] || UI_TEXTS.ru;
-        document.getElementById('up-title').innerText = t.up_title;
-        document.getElementById('up-desc').innerText = t.up_desc;
-        const sel = document.getElementById('doc-type');
-        sel.innerHTML = "";
-        t.types.forEach(type => sel.add(new Option(type, type)));
-    }
-
-    function updateWaitText(lang) {
-        const t = UI_TEXTS[lang] || UI_TEXTS.ru;
-        document.getElementById('wait-title').innerText = t.wait_title;
-        document.getElementById('wait-desc').innerText = t.wait_desc;
-    }
-
-    async function handleFileUpload() {
-        const fileIn = document.getElementById('file-input');
-        const type = document.getElementById('doc-type').value;
-        if (!fileIn.files.length) return alert("Файл не выбран");
-        const btn = document.getElementById('upload-btn');
-        btn.innerText = "Загрузка..."; btn.disabled = true;
-        const file = fileIn.files[0];
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            const base64 = e.target.result.split(',')[1];
-            const res = await apiCall('upload', { base64: base64, mime: file.type, type: type });
-            if (res?.success) {
-                document.getElementById('upload-status').innerText = "✅ Файл успешно отправлен";
-                fileIn.value = "";
-            }
-            btn.innerText = "Отправить файл"; btn.disabled = false;
-        };
-        reader.readAsDataURL(file);
-    }
-
-    async function loadAgenda() {
-        showScreen('screen-agenda');
-        const res = await apiCall('getAgenda');
-        if (res?.success) {
-            const container = document.getElementById('agenda-container');
-            container.innerHTML = "";
-            res.agenda.forEach(item => {
-                let fHtml = "";
-                item.files.forEach(f => {
-                    fHtml += `<div style="display:flex; justify-content:space-between; align-items:center; background:#fff; padding:10px; border-radius:10px; margin-top:10px; border:1px solid #eee;">
-                        <span>${f.name}</span>
-                        <button class="btn" style="width:auto; margin:0; padding:8px 15px; font-size:12px;" onclick="openPdf('${f.driveId}')">Открыть</button>
-                    </div>`;
-                });
-                container.innerHTML += `<div class="card"><h3>${item.title}</h3><p>${item.desc || ""}</p>${fHtml}</div>`;
-            });
-        }
-    }
-
-    async function openPdf(fileId) {
-        document.getElementById('pdf-viewer').classList.remove('hidden');
-        document.getElementById('pdf-pages').innerHTML = "<p style='color:white;text-align:center;padding:50px;'>Загрузка...</p>";
-        const res = await apiCall('getPdf', { fileId: fileId });
-        if (res?.success) {
-            const pdfData = atob(res.data);
-            const loadingTask = pdfjsLib.getDocument({ data: pdfData });
-            const pdf = await loadingTask.promise;
-            document.getElementById('pdf-pages').innerHTML = "";
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
-                const viewport = page.getViewport({ scale: 1.5 });
+                const viewport = page.getViewport({scale: 1.5});
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
-                canvas.height = viewport.height; canvas.width = viewport.width;
-                document.getElementById('pdf-pages').appendChild(canvas);
-                await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                await page.render({canvasContext: ctx, viewport: viewport}).promise;
+
+                // ВОДЯНОЙ ЗНАК
+                ctx.save();
+                ctx.font = "bold 30px Arial";
+                ctx.fillStyle = "rgba(180, 0, 0, 0.2)";
+                ctx.textAlign = "center";
+                ctx.translate(canvas.width / 2, canvas.height / 2);
+                ctx.rotate(-45 * Math.PI / 180);
+                
+                // Сетка водяных знаков
+                for(let x = -500; x < 500; x += 300) {
+                    for(let y = -500; y < 500; y += 300) {
+                        ctx.fillText(`NEST ONE - ID:${userId}`, x, y);
+                    }
+                }
+                ctx.restore();
+                container.appendChild(canvas);
             }
         }
-    }
-    function closePdf() { document.getElementById('pdf-viewer').classList.add('hidden'); }
-    if (user) apiCall('checkUser');
-</script>
+        loadPdf();
+    </script>
 </body>
 </html>
