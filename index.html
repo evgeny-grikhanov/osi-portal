@@ -1,258 +1,37 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>OSI Portal</title>
-  
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-  <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
-
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Roboto', sans-serif; margin: 0; padding: 20px; background: #fff; color: #000; padding-bottom: 50px; }
-    .hidden { display: none !important; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OSI Nest One Portal</title>
     
-    /* Лоадер */
-    #loader-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #fff; z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
-    .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #3390ec; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    
-    /* UI */
-    .btn { background: #3390ec; color: white; padding: 14px; width: 100%; border: none; border-radius: 10px; font-size: 16px; margin-bottom: 12px; cursor: pointer; }
-    .btn:disabled { background: #ccc; }
-    .card { border: 1px solid #eee; border-radius: 12px; padding: 15px; margin-bottom: 15px; background: #fff; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-    .file-item { background: #f4f4f5; padding: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
-    .btn-view { background: #3390ec; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-size: 13px; cursor: pointer; }
-    
-    /* Error Msg */
-    #debug-msg { color: red; font-size: 13px; margin-top: 20px; white-space: pre-wrap; display: none; padding: 10px; border: 1px solid red; border-radius: 8px;}
-  </style>
-</head>
-<body>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
 
-  <div id="loader-screen">
-    <div class="spinner"></div>
-    <div id="loader-status">Подключение...</div>
-    <div id="debug-msg"></div>
-    <button id="retry-btn" class="btn hidden" onclick="location.reload()" style="width:200px; margin-top:20px; background:#555">Повторить</button>
-  </div>
-
-  <div id="screen-lang" class="hidden" style="text-align:center; margin-top: 20vh;">
-    <h3>Select Language / Tilni tanlang <br> Выберите язык</h3>
-    <br>
-    <button class="btn" onclick="sendAction('setLang', {lang:'uz'})">O'zbek</button>
-    <button class="btn" onclick="sendAction('setLang', {lang:'ru'})">Русский</button>
-    <button class="btn" onclick="sendAction('setLang', {lang:'en'})">English</button>
-  </div>
-
-  <div id="screen-upload" class="hidden">
-    <h2 id="lbl-up-title">Загрузка</h2>
-    <p id="lbl-up-desc">...</p>
-    <select id="doc-type" style="width:100%; padding:12px; margin-bottom:15px; border:1px solid #ccc; border-radius:8px;"></select>
-    <input type="file" id="file-in" style="margin-bottom:20px;">
-    <button class="btn" id="btn-upload-act" onclick="uploadFile()">Загрузить</button>
-    <div id="upload-log" style="color:green; margin-bottom:15px; font-weight:bold;"></div>
-    <button class="btn" style="background:#4caf50" onclick="showScreen('screen-wait')">Готово</button>
-  </div>
-
-  <div id="screen-wait" class="hidden" style="text-align:center; margin-top:30vh;">
-    <div style="font-size:40px">⏳</div>
-    <h3>Ждите</h3>
-    <p>Администратор проверяет доступ.</p>
-  </div>
-
-  <div id="screen-agenda" class="hidden">
-    <h2 id="agenda-title">Повестка</h2>
-    <div id="agenda-list">Загрузка...</div>
-  </div>
-
-  <div id="pdf-viewer" class="hidden" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(20,20,20,0.95); z-index:10000; overflow-y:auto;">
-    <button onclick="document.getElementById('pdf-viewer').classList.add('hidden')" style="position:fixed; right:15px; top:15px; z-index:10001; width:40px; height:40px; background:rgba(255,255,255,0.2); color:white; border:none; border-radius:50%; font-size:20px;">✕</button>
-    <div id="pdf-content" style="text-align:center; padding-top:20px;"></div>
-  </div>
-
-<script>
-  // ==============================================
-  // ВСТАВЬТЕ ССЫЛКУ НА СКРИПТ (которая заканчивается на /exec) ВНИЗУ
-  const API_URL = "https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec"; 
-  // ==============================================
-
-  const tg = window.Telegram.WebApp;
-  tg.ready();
-  tg.expand();
-
-  const user = tg.initDataUnsafe?.user;
-  let currentLang = 'ru';
-
-  const TEXTS = {
-     ru: { up_title: "Загрузка документов", btn_up: "Загрузить", agenda: "Повестка", types: {passport:"Паспорт", cadastre:"Кадастр", power:"Доверенность"}, view:"Открыть" },
-     uz: { up_title: "Hujjatlarni yuklash", btn_up: "Yuklash", agenda: "Kun tartibi", types: {passport:"Pasport", cadastre:"Kadastr", power:"Ishonchnoma"}, view:"Ochish" },
-     en: { up_title: "Upload", btn_up: "Upload", agenda: "Agenda", types: {passport:"Passport", cadastre:"Cadastre", power:"Proxy"}, view:"View" }
-  };
-
-  // --- API ФУНКЦИЯ (ИСПРАВЛЕННАЯ ДЛЯ CORS) ---
-  async function callApi(action, payload = {}) {
-    payload.action = action;
-    payload.tgId = user ? user.id : 0; 
-    
-    // ВАЖНО: Не отправляем заголовки типа 'application/json', чтобы не злить Google CORS
-    const options = {
-      method: "POST",
-      body: JSON.stringify(payload) 
-    };
-
-    try {
-      const response = await fetch(API_URL, options);
-      const data = await response.json();
-      return data;
-    } catch (e) {
-      document.getElementById('debug-msg').style.display = 'block';
-      document.getElementById('debug-msg').innerText = "Network Error: " + e.message + "\nCheck API URL or Internet.";
-      document.getElementById('retry-btn').classList.remove('hidden');
-      throw e;
-    }
-  }
-
-  // --- СТАРТ ПРИЛОЖЕНИЯ ---
-  if (!user) {
-    document.getElementById('loader-status').innerText = "Ошибка: Нет данных Telegram";
-  } else {
-    document.getElementById('loader-status').innerText = "Подключение к серверу...";
-    callApi('checkUser', { name: user.first_name })
-      .then(res => {
-        if(res.success) routeUser(res);
-        else {
-            alert("Ошибка сервера: " + res.error);
-            document.getElementById('loader-screen').classList.add('hidden');
+    <style>
+        :root {
+            --tg-theme-bg: var(--tg-theme-bg-color, #ffffff);
+            --tg-theme-text: var(--tg-theme-text-color, #000000);
+            --tg-theme-btn: var(--tg-theme-button-color, #3390ec);
+            --tg-theme-btn-text: var(--tg-theme-button-text-color, #ffffff);
         }
-      });
-  }
-
-  function routeUser(data) {
-    document.getElementById('loader-screen').classList.add('hidden');
-    currentLang = data.lang;
-    const status = data.status;
-
-    if (status === 'Новый') showScreen('screen-lang');
-    else if (status === 'Регистрация' || status === 'PENDING') showUploadScreen();
-    else if (status === 'Активный') loadAgenda();
-    else if (status === 'Запрет') document.body.innerHTML = "<h2 style='text-align:center; color:red; margin-top:50px'>⛔️ Доступ запрещен</h2>";
-    else showScreen('screen-wait');
-  }
-
-  function showScreen(id) {
-    ['screen-lang', 'screen-upload', 'screen-wait', 'screen-agenda'].forEach(s => document.getElementById(s).classList.add('hidden'));
-    document.getElementById(id).classList.remove('hidden');
-    if(id === 'screen-upload') renderUploadUI();
-  }
-
-  // ОБРАБОТЧИК КНОПОК
-  function sendAction(action, data) {
-    document.getElementById('loader-screen').classList.remove('hidden');
-    document.getElementById('loader-status').innerText = "Сохранение...";
-    
-    callApi(action, data).then(res => {
-      if(res.success) {
-         if(action === 'setLang') routeUser({status:'Регистрация', lang: data.lang});
-      } else {
-         alert(res.error);
-         document.getElementById('loader-screen').classList.add('hidden');
-      }
-    });
-  }
-
-  function renderUploadUI() {
-    const t = TEXTS[currentLang] || TEXTS.ru;
-    document.getElementById('lbl-up-title').innerText = t.up_title;
-    document.getElementById('btn-upload-act').innerText = t.btn_up;
-    const sel = document.getElementById('doc-type');
-    sel.innerHTML = "";
-    for(let k in t.types) sel.add(new Option(t.types[k], k));
-  }
-
-  function uploadFile() {
-    const file = document.getElementById('file-in').files[0];
-    const type = document.getElementById('doc-type').value;
-    if(!file) return alert("Файл не выбран!");
-    
-    document.getElementById('btn-upload-act').innerText = "...";
-    document.getElementById('btn-upload-act').disabled = true;
-
-    const r = new FileReader();
-    r.onload = e => {
-      const b64 = e.target.result.split(',')[1];
-      callApi('upload', { base64: b64, mime: file.type, type: type })
-        .then(res => {
-          document.getElementById('btn-upload-act').disabled = false;
-          if(res.success) {
-             document.getElementById('upload-log').innerText += "✅ OK ";
-             document.getElementById('btn-upload-act').innerText = "OK";
-          } else alert(res.error);
-        });
-    };
-    r.readAsDataURL(file);
-  }
-
-  function loadAgenda() {
-    showScreen('screen-agenda');
-    callApi('getAgenda').then(res => {
-       if(res.success) renderAgenda(res);
-    });
-  }
-
-  function renderAgenda(data) {
-    const t = TEXTS[currentLang] || TEXTS.ru;
-    document.getElementById('agenda-title').innerText = t.agenda;
-    const list = document.getElementById('agenda-list');
-    list.innerHTML = "";
-    
-    data.agenda.forEach(item => {
-        let filesHtml = "";
-        item.files.forEach(f => {
-            filesHtml += `<div class="file-item"><span>${f.name}</span> <button class="btn-view" onclick="openPdf('${f.driveId}')">${t.view}</button></div>`;
-        });
-        list.innerHTML += `<div class="card"><h3>${item.title}</h3><p>${item.desc||''}</p>${filesHtml}</div>`;
-    });
-  }
-
-  function openPdf(id) {
-     document.getElementById('pdf-viewer').classList.remove('hidden');
-     document.getElementById('pdf-content').innerHTML = "<div style='color:white'>Загрузка...</div>";
-     
-     callApi('getPdf', {fileId: id}).then(res => {
-        if(!res.success) return alert(res.error);
+        body { font-family: -apple-system, system-ui, sans-serif; background: var(--tg-theme-bg); color: var(--tg-theme-text); margin: 0; padding: 20px; -webkit-user-select: none; }
+        .hidden { display: none !important; }
         
-        const pdfData = atob(res.data);
-        const loadingTask = pdfjsLib.getDocument({data: pdfData});
-        loadingTask.promise.then(pdf => {
-            document.getElementById('pdf-content').innerHTML = "";
-            for(let i=1; i<=pdf.numPages; i++) {
-                pdf.getPage(i).then(page => {
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    const vp = page.getViewport({scale:1.3});
-                    canvas.width = vp.width; canvas.height = vp.height;
-                    canvas.style.maxWidth = "100%";
-                    document.getElementById('pdf-content').appendChild(canvas);
-                    page.render({canvasContext:ctx, viewport:vp}).promise.then(() => {
-                        // WATERMARK
-                        ctx.save();
-                        ctx.globalAlpha = 0.2;
-                        ctx.font = "30px Arial";
-                        ctx.fillStyle = "red";
-                        ctx.translate(canvas.width/2, canvas.height/2);
-                        ctx.rotate(-0.5);
-                        ctx.textAlign = "center";
-                        ctx.fillText("CONFIDENTIAL " + user.id, 0, 0);
-                        ctx.restore();
-                    });
-                });
-            }
-        });
-     });
-  }
-</script>
-</body>
-</html>
+        /* Лоадер */
+        #loader-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--tg-theme-bg); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid var(--tg-theme-btn); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* Кнопки и Карточки */
+        .btn { background: var(--tg-theme-btn); color: var(--tg-theme-btn-text); padding: 15px; width: 100%; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; margin-bottom: 12px; cursor: pointer; transition: opacity 0.2s; }
+        .btn:active { opacity: 0.7; }
+        .btn-secondary { background: #8e8e93; }
+        .card { border: 1px solid rgba(0,0,0,0.1); border-radius: 15px; padding: 15px; margin-bottom: 15px; background: rgba(127,127,127,0.05); }
+        
+        /* Инпуты */
+        select, input[type="file"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ccc; margin-bottom: 15px; background: #fff; font-size: 16px; }
 
+        /* PDF Viewer */
+        #pdf-viewer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 10000; overflow-y: auto
