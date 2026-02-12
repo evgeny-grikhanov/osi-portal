@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>OSI Nest One</title>
+    <title>Nest One Portal</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
@@ -16,7 +16,7 @@
             --tg-btn-text: var(--tg-theme-button-text-color, #ffffff);
             --tg-hint: var(--tg-theme-hint-color, #8e8e93);
         }
-        body { font-family: -apple-system, system-ui, sans-serif; background: #f0f2f5; color: var(--tg-text); margin: 0; padding: 0; }
+        body { font-family: -apple-system, sans-serif; background: #f0f2f5; color: var(--tg-text); margin: 0; padding: 0; }
         
         .app-container {
             background: var(--tg-bg);
@@ -24,11 +24,11 @@
             margin: 0 auto;
             padding: 20px;
             box-sizing: border-box;
-            transition: width 0.3s ease;
+            box-shadow: 0 0 15px rgba(0,0,0,0.05);
         }
 
-        /* 80% на ПК, 100% на мобильных */
-        @media (min-width: 801px) { .app-container { width: 80%; box-shadow: 0 0 20px rgba(0,0,0,0.1); } }
+        /* Адаптивность: 80% на ПК */
+        @media (min-width: 801px) { .app-container { width: 80%; } }
         @media (max-width: 800px) { .app-container { width: 100%; } }
 
         .hidden { display: none !important; }
@@ -43,19 +43,19 @@
         #pdf-viewer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 10000; overflow-y: auto; }
         .close-pdf { position: fixed; right: 20px; top: 20px; background: rgba(255,255,255,0.3); color: #fff; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 20px; }
         canvas { display: block; margin: 10px auto; max-width: 100%; }
+        #debug-log { background: #000; color: #0f0; padding: 10px; font-family: monospace; font-size: 11px; margin-top: 20px; border-radius: 8px; text-align: left; max-height: 80px; overflow: auto; }
     </style>
 </head>
 <body>
 
     <div id="loader-screen">
         <div class="spinner"></div>
-        <div id="loader-status">Инициализация...</div>
+        <div id="loader-status">Загрузка...</div>
     </div>
 
     <div class="app-container">
         <div id="screen-lang" class="hidden" style="text-align: center; padding-top: 10vh;">
             <h2>Tilni tanlang / Выберите язык</h2>
-            <br>
             <button class="btn" onclick="apiCall('setLang', {lang:'uz'})">O'zbekcha</button>
             <button class="btn" onclick="apiCall('setLang', {lang:'ru'})">Русский</button>
             <button class="btn" onclick="apiCall('setLang', {lang:'en'})">English</button>
@@ -63,15 +63,16 @@
 
         <div id="screen-phone" class="hidden" style="text-align: center; padding-top: 10vh;">
             <h2 id="ph-title">Верификация</h2>
-            <p id="ph-desc">Подтвердите ваш номер для регистрации в Nest One.</p>
+            <p id="ph-desc">...</p>
             <br>
-            <button class="btn" onclick="requestPhone()">📱 Поделиться номером телефона</button>
-            <button class="btn btn-secondary" onclick="refusePhone()">Я не хочу делиться номером</button>
+            <button class="btn" id="btn-req-phone">📱 Поделиться номером телефона</button>
+            <button class="btn btn-secondary" onclick="refusePhone()">Отказаться</button>
+            <div id="debug-log">System: Ready</div>
         </div>
 
         <div id="screen-upload" class="hidden">
             <h2 id="up-title">Документы</h2>
-            <p id="up-desc">Загрузите подтверждающие файлы.</p>
+            <p id="up-desc">...</p>
             <select id="doc-type" style="width:100%; padding:12px; margin-bottom:15px; border-radius:10px; border:1px solid #ccc;"></select>
             <div class="card">
                 <input type="file" id="file-input" accept="application/pdf,image/*" style="margin-bottom:15px;">
@@ -84,11 +85,11 @@
         <div id="screen-wait" class="hidden" style="text-align: center; padding-top: 25vh;">
             <div style="font-size: 60px;">⏳</div>
             <h2 id="wait-title">Проверка</h2>
-            <p id="wait-desc">Ваши данные на модерации.</p>
+            <p id="wait-desc">Ваши документы проверяются.</p>
         </div>
 
         <div id="screen-agenda" class="hidden">
-            <h2 id="agenda-title">Повестка</h2>
+            <h2 id="agenda-title">Повестка собрания</h2>
             <div id="agenda-container"></div>
         </div>
 
@@ -99,6 +100,7 @@
     </div>
 
 <script>
+    // ВСТАВЬТЕ СЮДА ВАШ URL
     const API_URL = "https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec"; 
 
     const tg = window.Telegram.WebApp;
@@ -108,27 +110,22 @@
     const user = tg.initDataUnsafe?.user;
     let currentLang = 'ru';
 
+    function addLog(m) { document.getElementById('debug-log').innerHTML += "<br>> " + m; }
+
     const UI_TEXTS = {
         ru: {
-            ph_title: "Верификация", ph_desc: "Нажмите на кнопку ниже, чтобы предоставить номер телефона.",
+            ph_title: "Верификация", ph_desc: "Нажмите кнопку, чтобы подтвердить ваш номер телефона для доступа к ОСИ.",
             up_title: "Собственность", up_desc: "Загрузите Паспорт, Кадастр или Доверенность.",
-            refuse: "Для регистрации обратитесь в клиентский отдел Nest One.",
+            refuse: "Обратитесь в клиентский отдел для регистрации.",
             types: ["Паспорт / ID", "Кучерма (Кадастр)", "Доверенность"],
-            wait_title: "На проверке", wait_desc: "Доступ откроется после одобрения администратором.", view: "Открыть"
+            wait_title: "На модерации", wait_desc: "Доступ откроется после одобрения администратором.", view: "Открыть"
         },
         uz: {
-            ph_title: "Verifikatsiya", ph_desc: "Raqamingizni yuborish uchun quyidagi tugmani bosing.",
-            up_title: "Mulk", up_desc: "Pasport, kadastr yoki ishonchnomani yuklang.",
-            refuse: "Ro'yxatdan o'tish uchun Nest One mijozlar bo'limiga murojaat qiling.",
+            ph_title: "Verifikatsiya", ph_desc: "Raqamingizni tasdiqlash uchun quyidagi tugmani bosing.",
+            up_title: "Mulk", up_desc: "Pasport, Kadastr yoki Ishonchnomani yuklang.",
+            refuse: "Ro'yxatdan o'tish uchun mijozlar bo'limiga murojaat qiling.",
             types: ["Pasport / ID", "Ko'chirma (Kadastr)", "Ishonchnoma"],
             wait_title: "Tekshirilmoqda", wait_desc: "Moderatsiyadan so'ng ruxsat beriladi.", view: "Ko'rish"
-        },
-        en: {
-            ph_title: "Verification", ph_desc: "Click below to share your phone number.",
-            up_title: "Property", up_desc: "Upload passport, cadastre or proxy.",
-            refuse: "Please contact Nest One client department for registration.",
-            types: ["Passport / ID", "Cadastral Passport", "Power of Attorney"],
-            wait_title: "Pending", wait_desc: "Access will be granted after review.", view: "View"
         }
     };
 
@@ -138,47 +135,31 @@
         payload.action = action;
         payload.tgId = user.id;
         payload.name = user.first_name;
-
         try {
             const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
             const data = await res.json();
             document.getElementById('loader-screen').classList.add('hidden');
-            if (data.success) {
-                handleRouting(data);
-            } else {
-                alert("Ошибка: " + data.error);
-            }
+            if (data.success) handleRouting(data);
             return data;
         } catch (e) {
             document.getElementById('loader-screen').classList.add('hidden');
-            alert("Сбой сети. Повторите попытку.");
+            addLog("Error: " + e.message);
         }
     }
 
     function handleRouting(data) {
         currentLang = data.lang || '';
-        const phone = data.phone || '';
+        const hasPh = data.hasPhone;
         const status = data.status;
 
-        // 1. ПРОВЕРКА ЯЗЫКА
         if (!currentLang) {
             showScreen('screen-lang');
-            return;
-        }
-
-        // 2. ПРОВЕРКА ТЕЛЕФОНА (Если не админ/активный)
-        if (!phone && status !== 'Активный') {
+        } else if (!hasPh && status !== 'Активный') {
             showPhoneUI();
-            return;
-        }
-
-        // 3. ПРОВЕРКА СТАТУСА
-        if (status === 'Новый' || status === 'Регистрация' || status === 'PENDING') {
+        } else if (status === 'Новый' || status === 'Регистрация' || status === 'PENDING') {
             showUploadUI();
         } else if (status === 'Активный') {
             loadAgenda();
-        } else if (status === 'Запрет') {
-            document.body.innerHTML = `<h3 style='padding:50px; text-align:center;'>${UI_TEXTS[currentLang].refuse}</h3>`;
         } else {
             showScreen('screen-wait');
             updateWaitText();
@@ -199,25 +180,20 @@
         document.getElementById('ph-desc').innerText = t.ph_desc;
     }
 
-    // НОВЫЙ МЕТОД ЗАПРОСА ТЕЛЕФОНА
-    function requestPhone() {
+    document.getElementById('btn-req-phone').onclick = function() {
+        addLog("SDK Request...");
         tg.requestContact((success, response) => {
-            if (success && response.response && response.response.contact) {
-                const phone = response.response.contact.phone_number;
-                apiCall('updatePhone', { phone: phone });
-            } else {
-                console.log("Phone request failed or cancelled");
-            }
+            if (success) {
+                const contact = response.response?.contact || response.contact;
+                if (contact?.phone_number) {
+                    apiCall('updatePhone', { phone: contact.phone_number });
+                }
+            } else { addLog("Denied."); }
         });
-    }
+    };
 
     function refusePhone() {
-        const t = UI_TEXTS[currentLang] || UI_TEXTS.ru;
-        tg.showPopup({
-            title: 'Nest One',
-            message: t.refuse,
-            buttons: [{type: 'close'}]
-        }, () => tg.close());
+        tg.showPopup({ title: 'Nest One', message: UI_TEXTS[currentLang].refuse, buttons: [{type: 'close'}] }, () => tg.close());
     }
 
     function showUploadUI() {
@@ -242,19 +218,16 @@
         if (!fileIn.files.length) return alert("Файл не выбран");
         const btn = document.getElementById('upload-btn');
         btn.innerText = "Загрузка...";
-        btn.disabled = true;
-
         const file = fileIn.files[0];
         const reader = new FileReader();
         reader.onload = async (e) => {
             const base64 = e.target.result.split(',')[1];
             const res = await apiCall('upload', { base64: base64, mime: file.type, type: type });
-            if (res && res.success) {
-                document.getElementById('upload-status').innerText = "✅ Отправлено";
+            if (res?.success) {
+                document.getElementById('upload-status').innerText = "✅ Успешно";
                 fileIn.value = "";
             }
             btn.innerText = "Отправить файл";
-            btn.disabled = false;
         };
         reader.readAsDataURL(file);
     }
@@ -262,19 +235,18 @@
     async function loadAgenda() {
         showScreen('screen-agenda');
         const res = await apiCall('getAgenda');
-        if (res && res.success) {
+        if (res?.success) {
             const container = document.getElementById('agenda-container');
             container.innerHTML = "";
             res.agenda.forEach(item => {
-                let filesHtml = "";
+                let fHtml = "";
                 item.files.forEach(f => {
-                    filesHtml += `
-                        <div style="display:flex; justify-content:space-between; align-items:center; background:#fff; padding:10px; border-radius:10px; margin-top:10px; border:1px solid #eee;">
-                            <span style="font-size:14px;">${f.name}</span>
-                            <button class="btn" style="width:auto; margin:0; padding:8px 15px; font-size:12px;" onclick="openPdf('${f.driveId}')">${UI_TEXTS[currentLang].view}</button>
-                        </div>`;
+                    fHtml += `<div style="display:flex; justify-content:space-between; align-items:center; background:#fff; padding:10px; border-radius:10px; margin-top:10px; border:1px solid #eee;">
+                        <span>${f.name}</span>
+                        <button class="btn" style="width:auto; margin:0; padding:8px 15px; font-size:12px;" onclick="openPdf('${f.driveId}')">Открыть</button>
+                    </div>`;
                 });
-                container.innerHTML += `<div class="card"><h3>${item.title}</h3><p>${item.desc || ""}</p>${filesHtml}</div>`;
+                container.innerHTML += `<div class="card"><h3>${item.title}</h3><p>${item.desc || ""}</p>${fHtml}</div>`;
             });
         }
     }
@@ -283,7 +255,7 @@
         document.getElementById('pdf-viewer').classList.remove('hidden');
         document.getElementById('pdf-pages').innerHTML = "<p style='color:white;text-align:center;padding:50px;'>Загрузка...</p>";
         const res = await apiCall('getPdf', { fileId: fileId });
-        if (res && res.success) {
+        if (res?.success) {
             const pdfData = atob(res.data);
             const loadingTask = pdfjsLib.getDocument({ data: pdfData });
             const pdf = await loadingTask.promise;
@@ -300,7 +272,6 @@
         }
     }
     function closePdf() { document.getElementById('pdf-viewer').classList.add('hidden'); }
-
     if (user) apiCall('checkUser');
 </script>
 </body>
