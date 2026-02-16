@@ -139,7 +139,7 @@
         ctx.save();
         
         // Настройки шрифта
-        const fontSize = Math.round(w / 25);
+        const fontSize = Math.round(w / 15);
         ctx.font = `bold ${fontSize}px Arial`;
         ctx.fillStyle = "rgba(180, 180, 180, 0.35)"; // Полупрозрачный серый
         ctx.textAlign = "center";
@@ -150,8 +150,8 @@
         ctx.rotate(-Math.PI / 4);
         
         // Рисуем текст в несколько рядов для надежности
-        const step = h / 4;
-        for (let i = -3; i <= 3; i++) {
+        const step = h / 8;
+        for (let i = -8; i <= 8; i++) {
             ctx.fillText(text, 0, i * step);
         }
         
@@ -172,3 +172,4 @@
 
 </body>
 </html>
+
