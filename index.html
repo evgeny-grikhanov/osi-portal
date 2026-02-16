@@ -4,68 +4,117 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Документы Nest One</title>
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
+
     <style>
-        body { margin: 0; background: #1a1a1a; color: #fff; font-family: sans-serif; }
-        #header { background: #000; padding: 15px; text-align: center; border-bottom: 2px solid #d4af37; position: sticky; top: 0; z-index: 10; font-weight: bold; letter-spacing: 1px; }
-        #viewer { display: flex; flex-direction: column; align-items: center; padding: 10px; }
-        canvas { max-width: 100%; height: auto; margin-bottom: 20px; box-shadow: 0 0 20px rgba(0,0,0,0.5); background: #fff; }
+        body { margin: 0; background: #1a1a1a; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        
+        /* Шапка с кнопками */
+        #header { 
+            width: 100%; background: #000; padding: 15px 0; 
+            border-bottom: 2px solid #d4af37; 
+            position: sticky; top: 0; z-index: 100; 
+            display: flex; justify-content: center; align-items: center; gap: 15px; 
+            flex-wrap: wrap;
+        }
+
+        #title { font-weight: bold; letter-spacing: 1px; margin-right: 20px; }
+
+        .btn {
+            background-color: #333; color: #fff; border: 1px solid #555;
+            padding: 8px 15px; border-radius: 4px; cursor: pointer;
+            font-size: 14px; transition: 0.3s; display: flex; align-items: center; gap: 5px;
+            text-decoration: none;
+        }
+        .btn:hover { background-color: #d4af37; color: #000; border-color: #d4af37; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; background-color: #222; color: #777; border-color: #333; }
+
+        /* Вьювер */
+        #viewer { display: flex; flex-direction: column; align-items: center; padding: 20px 10px; width: 100%; max-width: 1000px; }
+        canvas { max-width: 100%; height: auto; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); background: #fff; border-radius: 4px; }
+        
         #loader { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; }
         .spinner { border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #d4af37; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 15px; }
         #status { color: #aaa; font-size: 14px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
-<div id="header">ЗАЩИЩЕННЫЙ ПРОСМОТР</div>
-<div id="loader"><div class="spinner"></div><div id="status">Загрузка защищенного документа...</div></div>
+<div id="header">
+    <span id="title">ЗАЩИЩЕННЫЙ ПРОСМОТР</span>
+    <button id="btnDownload" class="btn" onclick="handleAction('download')" disabled>📥 Скачать</button>
+    <button id="btnPrint" class="btn" onclick="handleAction('print')" disabled>🖨️ Печать</button>
+</div>
+
+<div id="loader">
+    <div class="spinner"></div>
+    <div id="status">Получение данных...</div>
+</div>
+
 <div id="viewer"></div>
 
 <script>
-    // --- ВАША ССЫЛКА ---
+    // --- ОБНОВИТЕ ССЫЛКУ ЕСЛИ НУЖНО ---
     const API = 'https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec';
     
     const params = new URLSearchParams(window.location.search);
     const fid = params.get('fid');
     const uid = params.get('id');
-    const name = params.get('name') || 'Собственник';
-    const room = params.get('room') || 'Не указано';
-    const date = params.get('date') || new Date().toLocaleDateString();
+
+    // Глобальные переменные для хранения данных
+    let rawPdfBytes = null;
+    let watermarkData = [];
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
-    async function load() {
-        if (!fid || !uid) { 
-            document.getElementById('status').innerText = 'Ошибка: Неверная ссылка'; 
-            document.querySelector('.spinner').style.display = 'none';
-            return; 
-        }
+    // 1. ИНИЦИАЛИЗАЦИЯ
+    async function init() {
+        if (!fid || !uid) { showError('Ошибка ссылки'); return; }
 
         try {
-            const pdfRes = await fetch(`${API}?action=getPdf&fid=${fid}`);
-            const pdfData = await pdfRes.json();
+            // Запрашиваем PDF и Данные пользователя параллельно
+            const [pdfRes, userRes] = await Promise.all([
+                fetch(`${API}?action=getPdf&fid=${fid}`),
+                fetch(`${API}?action=getUserInfo&id=${uid}`) // Получаем имя из базы
+            ]);
 
-            if (!pdfData.success) throw new Error("Файл не найден");
+            const pdfJson = await pdfRes.json();
+            const userJson = await userRes.json();
 
-            // Формируем массив строк для штампа
-            const watermarkLines = [
-                `${name} (ID: ${uid})`,
-                `Помещение: ${room}`,
-                `Дата: ${date}`
+            if (!pdfJson.success) throw new Error("Файл не доступен");
+
+            // Сохраняем сырой PDF для генератора
+            rawPdfBytes = atob(pdfJson.base64);
+
+            // Формируем массив строк штампа
+            const userName = userJson.success ? userJson.name : 'неизвестно';
+            const userRoom = userJson.success ? userJson.premises : '---';
+            const dateStr = new Date().toLocaleDateString('ru-RU');
+
+            watermarkData = [
+                `Собственник: ${userName} (ID: ${uid})`,
+                `Помещение: ${userRoom}`,
+                `Дата: ${dateStr}`
             ];
 
-            render(pdfData.base64, watermarkLines);
+            // Рисуем на экране (быстрый просмотр)
+            renderPreview(rawPdfBytes, watermarkData);
 
-        } catch (e) { 
-            document.getElementById('status').innerText = 'Ошибка доступа или загрузки'; 
-            document.querySelector('.spinner').style.display = 'none';
-            console.error(e);
-        }
+            // Активируем кнопки
+            document.getElementById('btnDownload').disabled = false;
+            document.getElementById('btnPrint').disabled = false;
+
+        } catch (e) { showError('Ошибка доступа: ' + e.message); }
     }
 
-    async function render(base64, lines) {
-        const pdf = await pdfjsLib.getDocument({ data: atob(base64) }).promise;
+    // 2. ОТРИСОВКА НА ЭКРАНЕ (Canvas)
+    async function renderPreview(pdfData, lines) {
+        document.getElementById('status').innerText = 'Обработка документа...';
+        const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
         document.getElementById('loader').style.display = 'none';
 
         for (let n = 1; n <= pdf.numPages; n++) {
@@ -73,75 +122,140 @@
             const viewport = page.getViewport({ scale: 1.5 });
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
+            canvas.height = viewport.height; canvas.width = viewport.width;
 
             await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-            drawWM(canvas, lines);
+            drawCanvasWatermark(canvas, lines);
             document.getElementById('viewer').appendChild(canvas);
         }
     }
 
-    function drawWM(canvas, lines) {
+    function drawCanvasWatermark(canvas, lines) {
         const ctx = canvas.getContext('2d');
-        const w = canvas.width;
-        const h = canvas.height;
-
+        const w = canvas.width; const h = canvas.height;
         ctx.save();
         
-        // 1. ШРИФТ И ЦВЕТ
-        const fontSize = Math.max(16, Math.round(w / 50)); 
+        const fontSize = Math.max(16, Math.round(w / 50));
         ctx.font = `bold ${fontSize}px Arial`;
-        
-        // Ярко-красный, полупрозрачный (0.25)
-        ctx.fillStyle = "rgba(255, 0, 0, 0.25)"; 
-        
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
+        ctx.fillStyle = "rgba(255, 0, 0, 0.25)";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
 
-        // 2. РАСЧЕТ РАЗМЕРОВ
         let maxWidth = 0;
-        lines.forEach(line => {
-            const m = ctx.measureText(line);
-            if (m.width > maxWidth) maxWidth = m.width;
-        });
-
-        // Плотный межстрочный интервал (1.1)
-        const lineHeight = fontSize * 1.1; 
+        lines.forEach(l => { const m = ctx.measureText(l); if(m.width>maxWidth) maxWidth=m.width; });
+        
+        const lineHeight = fontSize * 1.1;
         const blockHeight = lines.length * lineHeight;
+        const stepX = maxWidth + 60; const stepY = blockHeight + 50;
 
-        // 3. СЕТКА (ПЛОТНАЯ)
-        // Минимальные отступы, чтобы текст шел сплошняком
-        const marginX = 60; 
-        const marginY = 50; 
-
-        const stepX = maxWidth + marginX;
-        const stepY = blockHeight + marginY;
-
-        // 4. ПОВОРОТ И ОТРИСОВКА
-        ctx.translate(w / 2, h / 2);
-        ctx.rotate(-45 * Math.PI / 180);
-
-        // Увеличили область отрисовки для надежности
+        ctx.translate(w/2, h/2); ctx.rotate(-45 * Math.PI / 180);
         const diag = Math.sqrt(w*w + h*h) + 500;
 
         for (let y = -diag; y < diag; y += stepY) {
-            // Шахматный порядок
-            const rowShift = (Math.floor(y / stepY) % 2 === 0) ? 0 : stepX / 2;
-
+            const rowShift = (Math.floor(y/stepY)%2 === 0) ? 0 : stepX/2;
             for (let x = -diag; x < diag; x += stepX) {
-                lines.forEach((line, index) => {
-                    // Центровка строк внутри блока
-                    const lineY = y + (index - (lines.length - 1) / 2) * lineHeight;
-                    ctx.fillText(line, x + rowShift, lineY);
+                lines.forEach((l, i) => {
+                    const ly = y + (i - (lines.length-1)/2) * lineHeight;
+                    ctx.fillText(l, x + rowShift, ly);
                 });
             }
         }
         ctx.restore();
     }
 
-    load();
+    // 3. ГЕНЕРАЦИЯ ФАЙЛА ДЛЯ СКАЧИВАНИЯ/ПЕЧАТИ (PDF-Lib)
+    async function handleAction(type) {
+        const btn = document.getElementById(type === 'download' ? 'btnDownload' : 'btnPrint');
+        const originalText = btn.innerText;
+        btn.disabled = true;
+        btn.innerText = "⏳ Обработка...";
+
+        try {
+            const { PDFDocument, rgb, degrees } = PDFLib;
+            const pdfDoc = await PDFDocument.load(rawPdfBytes);
+            
+            // Подключаем шрифт Ubuntu для кириллицы
+            pdfDoc.registerFontkit(fontkit);
+            const fontUrl = 'https://pdf-lib.js.org/assets/ubuntu/Ubuntu-R.ttf';
+            const fontBytes = await fetch(fontUrl).then(res => res.arrayBuffer());
+            const customFont = await pdfDoc.embedFont(fontBytes);
+
+            const pages = pdfDoc.getPages();
+            const fontSize = 14;
+            const lineHeight = 16;
+            const opacity = 0.25;
+            const color = rgb(1, 0, 0); // Красный
+
+            // Считаем ширину текста для PDF
+            let maxW = 0;
+            watermarkData.forEach(l => {
+                const w = customFont.widthOfTextAtSize(l, fontSize);
+                if(w > maxW) maxW = w;
+            });
+            
+            const stepX = maxW + 80;
+            const stepY = (watermarkData.length * lineHeight) + 60;
+
+            // Наносим штампы на каждую страницу
+            pages.forEach(page => {
+                const { width, height } = page.getSize();
+                const diag = Math.sqrt(width*width + height*height) + 500;
+
+                for (let y = -diag; y < diag; y += stepY) {
+                    const rowShift = (Math.floor(y/stepY)%2 === 0) ? 0 : stepX/2;
+                    for (let x = -diag; x < diag; x += stepX) {
+                        watermarkData.forEach((line, i) => {
+                            const offset = (i - (watermarkData.length-1)/2) * lineHeight;
+                            page.drawText(line, {
+                                x: (width/2) + x + rowShift,
+                                y: (height/2) + y - offset,
+                                size: fontSize,
+                                font: customFont,
+                                color: color,
+                                opacity: opacity,
+                                rotate: degrees(-45),
+                            });
+                        });
+                    }
+                }
+            });
+
+            const pdfBytes = await pdfDoc.save();
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+
+            if (type === 'download') {
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `NestOne_Doc_${uid}.pdf`;
+                link.click();
+            } else {
+                // Печать через iframe
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = url;
+                document.body.appendChild(iframe);
+                iframe.onload = function() {
+                    setTimeout(function() {
+                        iframe.contentWindow.print();
+                    }, 500);
+                };
+            }
+
+        } catch (e) {
+            alert("Ошибка генерации: " + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerText = originalText;
+        }
+    }
+
+    function showError(msg) {
+        document.getElementById('status').innerText = msg;
+        document.getElementById('status').style.color = '#ff5555';
+        document.querySelector('.spinner').style.display = 'none';
+    }
+
+    init();
 </script>
 </body>
 </html>
-
