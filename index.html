@@ -13,7 +13,6 @@
     <style>
         body { margin: 0; background: #1a1a1a; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
         
-        /* Шапка с кнопками */
         #header { 
             width: 100%; background: #000; padding: 15px 0; 
             border-bottom: 2px solid #d4af37; 
@@ -33,7 +32,6 @@
         .btn:hover { background-color: #d4af37; color: #000; border-color: #d4af37; }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; background-color: #222; color: #777; border-color: #333; }
 
-        /* Вьювер */
         #viewer { display: flex; flex-direction: column; align-items: center; padding: 20px 10px; width: 100%; max-width: 1000px; }
         canvas { max-width: 100%; height: auto; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); background: #fff; border-radius: 4px; }
         
@@ -58,28 +56,38 @@
 <div id="viewer"></div>
 
 <script>
-    // --- ОБНОВИТЕ ССЫЛКУ ЕСЛИ НУЖНО ---
     const API = 'https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec';
     
     const params = new URLSearchParams(window.location.search);
     const fid = params.get('fid');
     const uid = params.get('id');
 
-    // Глобальные переменные для хранения данных
-    let rawPdfBytes = null;
+    // Глобальные переменные
+    let rawPdfBytes = null; // Здесь будет лежать Uint8Array (готовый для pdf-lib)
     let watermarkData = [];
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+    // === ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ КОНВЕРТАЦИИ ===
+    function base64ToUint8Array(base64) {
+        // Очищаем от возможных пробелов и переносов строк
+        const raw = atob(base64.replace(/\s/g, ''));
+        const rawLength = raw.length;
+        const array = new Uint8Array(rawLength);
+        for (let i = 0; i < rawLength; i++) {
+            array[i] = raw.charCodeAt(i);
+        }
+        return array;
+    }
 
     // 1. ИНИЦИАЛИЗАЦИЯ
     async function init() {
         if (!fid || !uid) { showError('Ошибка ссылки'); return; }
 
         try {
-            // Запрашиваем PDF и Данные пользователя параллельно
             const [pdfRes, userRes] = await Promise.all([
                 fetch(`${API}?action=getPdf&fid=${fid}`),
-                fetch(`${API}?action=getUserInfo&id=${uid}`) // Получаем имя из базы
+                fetch(`${API}?action=getUserInfo&id=${uid}`)
             ]);
 
             const pdfJson = await pdfRes.json();
@@ -87,33 +95,33 @@
 
             if (!pdfJson.success) throw new Error("Файл не доступен");
 
-            // Сохраняем сырой PDF для генератора
-            rawPdfBytes = atob(pdfJson.base64);
+            // ИСПРАВЛЕНИЕ: Конвертируем Base64 в Uint8Array сразу
+            rawPdfBytes = base64ToUint8Array(pdfJson.base64);
 
-            // Формируем массив строк штампа
-            const userName = userJson.success ? userJson.name : 'неизвестно';
+            const userName = userJson.success ? userJson.name : 'Собственник';
             const userRoom = userJson.success ? userJson.premises : '---';
             const dateStr = new Date().toLocaleDateString('ru-RU');
 
             watermarkData = [
-                `Собственник: ${userName} (ID: ${uid})`,
+                `${userName} (ID: ${uid})`,
                 `Помещение: ${userRoom}`,
                 `Дата: ${dateStr}`
             ];
 
-            // Рисуем на экране (быстрый просмотр)
+            // Рисуем превью
             renderPreview(rawPdfBytes, watermarkData);
 
-            // Активируем кнопки
+            // Включаем кнопки
             document.getElementById('btnDownload').disabled = false;
             document.getElementById('btnPrint').disabled = false;
 
         } catch (e) { showError('Ошибка доступа: ' + e.message); }
     }
 
-    // 2. ОТРИСОВКА НА ЭКРАНЕ (Canvas)
+    // 2. ОТРИСОВКА (Canvas)
     async function renderPreview(pdfData, lines) {
         document.getElementById('status').innerText = 'Обработка документа...';
+        // PDF.js отлично понимает Uint8Array
         const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
         document.getElementById('loader').style.display = 'none';
 
@@ -162,18 +170,20 @@
         ctx.restore();
     }
 
-    // 3. ГЕНЕРАЦИЯ ФАЙЛА ДЛЯ СКАЧИВАНИЯ/ПЕЧАТИ (PDF-Lib)
+    // 3. ГЕНЕРАЦИЯ (PDF-Lib)
     async function handleAction(type) {
         const btn = document.getElementById(type === 'download' ? 'btnDownload' : 'btnPrint');
         const originalText = btn.innerText;
         btn.disabled = true;
-        btn.innerText = "⏳ Обработка...";
+        btn.innerText = "⏳ Генерация...";
 
         try {
             const { PDFDocument, rgb, degrees } = PDFLib;
+            
+            // ИСПРАВЛЕНИЕ: Передаем Uint8Array, а не Base64 строку.
+            // Теперь pdf-lib точно найдет header.
             const pdfDoc = await PDFDocument.load(rawPdfBytes);
             
-            // Подключаем шрифт Ubuntu для кириллицы
             pdfDoc.registerFontkit(fontkit);
             const fontUrl = 'https://pdf-lib.js.org/assets/ubuntu/Ubuntu-R.ttf';
             const fontBytes = await fetch(fontUrl).then(res => res.arrayBuffer());
@@ -183,9 +193,8 @@
             const fontSize = 14;
             const lineHeight = 16;
             const opacity = 0.25;
-            const color = rgb(1, 0, 0); // Красный
+            const color = rgb(1, 0, 0);
 
-            // Считаем ширину текста для PDF
             let maxW = 0;
             watermarkData.forEach(l => {
                 const w = customFont.widthOfTextAtSize(l, fontSize);
@@ -195,7 +204,6 @@
             const stepX = maxW + 80;
             const stepY = (watermarkData.length * lineHeight) + 60;
 
-            // Наносим штампы на каждую страницу
             pages.forEach(page => {
                 const { width, height } = page.getSize();
                 const diag = Math.sqrt(width*width + height*height) + 500;
@@ -229,7 +237,6 @@
                 link.download = `NestOne_Doc_${uid}.pdf`;
                 link.click();
             } else {
-                // Печать через iframe
                 const iframe = document.createElement('iframe');
                 iframe.style.display = 'none';
                 iframe.src = url;
@@ -243,6 +250,7 @@
 
         } catch (e) {
             alert("Ошибка генерации: " + e.message);
+            console.error(e);
         } finally {
             btn.disabled = false;
             btn.innerText = originalText;
