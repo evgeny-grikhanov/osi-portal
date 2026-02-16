@@ -3,73 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Просмотр документа | Nest One</title>
+    <title>Документы Nest One | Просмотр</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; background: #f4f4f9; color: #333; }
-        #header { background: #1a1a1a; color: white; padding: 15px; text-align: center; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-        #viewer-container { display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        .page-container { position: relative; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); background: white; line-height: 0; }
+        :root {
+            --gold: #d4af37;
+            --dark: #1a1a1a;
+        }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 0; padding: 0; background: #2c2c2c; color: #fff; 
+        }
+        #header { 
+            background: var(--dark); border-bottom: 2px solid var(--gold);
+            padding: 15px; text-align: center; font-weight: bold;
+            position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        #viewer-container { 
+            display: flex; flex-direction: column; align-items: center; padding: 10px; 
+        }
+        .page-container { 
+            position: relative; margin-bottom: 20px; 
+            background: white; line-height: 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
         canvas { max-width: 100%; height: auto; }
-        #loader { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; }
-        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #d4af37; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 15px; }
+        #loader { 
+            display: flex; flex-direction: column; align-items: center; 
+            justify-content: center; height: 80vh; 
+        }
+        .spinner { 
+            border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid var(--gold); 
+            border-radius: 50%; width: 50px; height: 50px; 
+            animation: spin 1s linear infinite; margin-bottom: 20px; 
+        }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .error-msg { color: #d9534f; text-align: center; padding: 20px; }
+        .error-box { 
+            background: #d9534f; color: white; padding: 20px; 
+            border-radius: 8px; max-width: 80%; text-align: center; 
+        }
+        .status-text { font-size: 14px; color: #aaa; }
     </style>
 </head>
 <body>
 
-<div id="header">Nest One — Ознакомление с документом</div>
+<div id="header">NEST ONE — ПОРТАЛ СОБСТВЕННИКА</div>
 
 <div id="loader">
     <div class="spinner"></div>
-    <div id="status-text">Загрузка защищенного документа...</div>
+    <div id="status-text" class="status-text">Инициализация...</div>
 </div>
 
 <div id="viewer-container"></div>
 
 <script>
-    // КОНФИГУРАЦИЯ — Вставьте сюда ваш URL из Google Apps Script
+    /** * КОНФИГУРАЦИЯ
+     * Замените URL на ваш актуальный Web App URL после развертывания
+     */
     const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec';
     
-    // 1. Получаем параметры из URL
+    // Настройка PDF.js работника
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+    // 1. Извлекаем параметры из ссылки
     const urlParams = new URLSearchParams(window.location.search);
-    const fileId = urlParams.get('fid');
-    const userId = urlParams.get('id');
-    const qId = urlParams.get('qid');
+    const fid = urlParams.get('fid'); // ID файла
+    const uid = urlParams.get('id');  // ID пользователя
 
-    if (!fileId || !userId) {
-        showError("Ошибка: Недостаточно данных для открытия файла.");
-    } else {
-        init();
-    }
+    async function startApp() {
+        if (!fid || !uid) {
+            return showError("Ошибка доступа: Ссылка повреждена или ID пользователя отсутствует.");
+        }
 
-    async function init() {
         try {
-            // 2. Запрашиваем текст водяного знака
-            updateStatus("Получение прав доступа...");
-            const wmResponse = await fetch(`${WEB_APP_URL}?action=getWatermark&id=${userId}`);
-            const wmResult = await wmResponse.json();
-            const watermarkText = wmResult.watermark || "ПРОСМОТР ЗАПРЕЩЕН";
+            // ШАГ 1: Запрашиваем текст водяного знака
+            updateStatus("Авторизация пользователя...");
+            const wmResponse = await fetch(`${WEB_APP_URL}?action=getWatermark&id=${uid}`);
+            const wmData = await wmResponse.json();
+            
+            if (!wmData.success) throw new Error("Не удалось получить данные водяного знака");
+            const watermarkText = wmData.watermark;
 
-            // 3. Запрашиваем сам файл в Base64
-            updateStatus("Загрузка файла...");
-            const pdfResponse = await fetch(`${WEB_APP_URL}?action=getPdf&fid=${fileId}`);
-            const pdfResult = await pdfResponse.json();
+            // ШАГ 2: Запрашиваем сам PDF
+            updateStatus("Загрузка документа...");
+            const pdfResponse = await fetch(`${WEB_APP_URL}?action=getPdf&fid=${fid}`);
+            const pdfData = await pdfResponse.json();
 
-            if (pdfResult.success) {
-                renderPdf(pdfResult.base64, watermarkText);
+            if (pdfData.success) {
+                renderPdf(pdfData.base64, watermarkText);
             } else {
-                showError("Документ не найден или доступ ограничен.");
+                showError("Документ не найден или у вас нет прав на его просмотр.");
             }
         } catch (err) {
             console.error(err);
-            showError("Ошибка связи с сервером.");
+            showError("Сбой при подключении к серверу. Попробуйте обновить страницу.");
         }
     }
 
-    async function renderPdf(base64, watermarkText) {
-        updateStatus("Отрисовка страниц...");
+    async function renderPdf(base64, wmText) {
+        updateStatus("Подготовка страниц...");
         const binaryData = atob(base64);
         const loadingTask = pdfjsLib.getDocument({ data: binaryData });
         const pdf = await loadingTask.promise;
@@ -79,7 +111,7 @@
 
         for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
-            const viewport = page.getViewport({ scale: 1.5 });
+            const viewport = page.getViewport({ scale: 2.0 }); // Высокое качество
             
             const pageContainer = document.createElement('div');
             pageContainer.className = 'page-container';
@@ -91,32 +123,36 @@
 
             await page.render({ canvasContext: context, viewport: viewport }).promise;
 
-            // 4. Наложение водяного знака поверх страницы
-            applyWatermark(canvas, watermarkText);
+            // Накладываем водяной знак
+            drawWatermark(canvas, wmText);
 
             pageContainer.appendChild(canvas);
             container.appendChild(pageContainer);
         }
     }
 
-    function applyWatermark(canvas, text) {
+    function drawWatermark(canvas, text) {
         const ctx = canvas.getContext('2d');
-        const width = canvas.width;
-        const height = canvas.height;
+        const w = canvas.width;
+        const h = canvas.height;
 
         ctx.save();
-        ctx.font = `${Math.round(width / 25)}px Arial`;
-        ctx.fillStyle = "rgba(150, 150, 150, 0.4)"; // Цвет и прозрачность
+        
+        // Настройки шрифта
+        const fontSize = Math.round(w / 25);
+        ctx.font = `bold ${fontSize}px Arial`;
+        ctx.fillStyle = "rgba(180, 180, 180, 0.35)"; // Полупрозрачный серый
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         
-        // Рисуем текст по диагонали (через всю страницу)
-        ctx.translate(width / 2, height / 2);
+        // Поворачиваем контекст для диагонального текста
+        ctx.translate(w / 2, h / 2);
         ctx.rotate(-Math.PI / 4);
         
-        // Повторяем водяной знак несколько раз для защиты
-        for (let i = -2; i <= 2; i++) {
-            ctx.fillText(text, 0, i * (height / 5));
+        // Рисуем текст в несколько рядов для надежности
+        const step = h / 4;
+        for (let i = -3; i <= 3; i++) {
+            ctx.fillText(text, 0, i * step);
         }
         
         ctx.restore();
@@ -127,10 +163,12 @@
     }
 
     function showError(msg) {
-        document.getElementById('loader').innerHTML = `<div class="error-msg">${msg}</div>`;
+        document.getElementById('loader').innerHTML = `<div class="error-box">${msg}</div>`;
     }
+
+    // Запуск приложения
+    startApp();
 </script>
 
 </body>
 </html>
-
