@@ -132,31 +132,45 @@
     }
 
     function drawWatermark(canvas, text) {
-        const ctx = canvas.getContext('2d');
-        const w = canvas.width;
-        const h = canvas.height;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
 
-        ctx.save();
+    ctx.save();
+    
+    // 1. НАСТРОЙКА ШРИФТА И ЦВЕТА
+    // Уменьшаем шрифт, чтобы 25 строк не превратились в кашу
+    const fontSize = Math.round(w / 35); 
+    ctx.font = `bold ${fontSize}px Arial`;
+    
+    // Бледно-красный цвет
+    ctx.fillStyle = "rgba(255, 0, 0, 0.12)"; 
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    
+    // Центрируем и поворачиваем
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(-Math.PI / 4);
+    
+    // 2. ГЕОМЕТРИЯ СЕТКИ
+    // Чтобы влезло 25 строк, шаг должен быть примерно 1/25 от высоты (с запасом)
+    const stepY = h / 22; 
+    // Смещение по горизонтали для повторений в одной строке
+    const stepX = w / 1.5; 
+
+    // 3. ОТРИСОВКА (25+ строк, по 3+ повторения в каждой)
+    // Цикл от -15 до 15 дает 31 строку (гарантирует заполнение углов при повороте)
+    for (let i = -15; i <= 15; i++) {
+        const y = i * stepY;
         
-        // Настройки шрифта
-        const fontSize = Math.round(w / 25);
-        ctx.font = `bold ${fontSize}px Arial`;
-        ctx.fillStyle = "rgba(180, 180, 180, 0.35)"; // Полупрозрачный серый
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        
-        // Поворачиваем контекст для диагонального текста
-        ctx.translate(w / 2, h / 2);
-        ctx.rotate(-Math.PI / 4);
-        
-        // Рисуем текст в несколько рядов для надежности
-        const step = h / 8;
-        for (let i = -15; i <= 15; i++) {
-            ctx.fillText(text, 0, i * step);
-        }
-        
-        ctx.restore();
+        // Рисуем 3 повторения в каждой строке: слева, в центре и справа
+        ctx.fillText(text, -stepX, y); // Левое повторение
+        ctx.fillText(text, 0, y);      // Центральное
+        ctx.fillText(text, stepX, y);  // Правое повторение
     }
+    
+    ctx.restore();
+}
 
     function updateStatus(msg) {
         document.getElementById('status-text').innerText = msg;
@@ -172,6 +186,7 @@
 
 </body>
 </html>
+
 
 
 
