@@ -3,78 +3,133 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nest One Document Viewer</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <title>Просмотр документа | Nest One</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <style>
-        body { margin: 0; background: #3e3e42; display: flex; flex-direction: column; align-items: center; font-family: sans-serif; }
-        canvas { margin: 15px 0; box-shadow: 0 0 20px rgba(0,0,0,0.6); max-width: 95%; background: white; }
-        #status { color: white; margin-top: 50px; text-align: center; padding: 20px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; background: #f4f4f9; color: #333; }
+        #header { background: #1a1a1a; color: white; padding: 15px; text-align: center; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        #viewer-container { display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .page-container { position: relative; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); background: white; line-height: 0; }
+        canvas { max-width: 100%; height: auto; }
+        #loader { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #d4af37; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 15px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .error-msg { color: #d9534f; text-align: center; padding: 20px; }
     </style>
 </head>
 <body>
-    <div id="status">Загрузка защищенного документа...</div>
-    <div id="pdf-container"></div>
 
-    <script>
-        const params = new URLSearchParams(window.location.search);
-        const fileId = params.get('fid');
-        const userName = params.get('name') || 'Собственник';
-        const userId = params.get('id') || '';
-        const userRoom = params.get('room') || '---';
-        const dateStamp = params.get('date') || '';
-        
-        // --- ВСТАВЬТЕ ССЫЛКУ ИЗ DEPLOY НИЖЕ ---
-        const GAS_URL = 'https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec';
+<div id="header">Nest One — Ознакомление с документом</div>
 
-        async function init() {
-            try {
-                const res = await fetch(`${GAS_URL}?action=getPdf&fid=${fileId}`);
-                const data = await res.json();
-                
-                if (!data.success) throw new Error(data.error || "Файл не найден");
+<div id="loader">
+    <div class="spinner"></div>
+    <div id="status-text">Загрузка защищенного документа...</div>
+</div>
 
-                const pdfData = atob(data.base64);
-                const loadingTask = pdfjsLib.getDocument({data: pdfData});
-                const pdf = await loadingTask.promise;
-                document.getElementById('status').style.display = 'none';
+<div id="viewer-container"></div>
 
-                for (let i = 1; i <= pdf.numPages; i++) {
-                    const page = await pdf.getPage(i);
-                    const viewport = page.getViewport({scale: 1.5});
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    canvas.height = viewport.height; 
-                    canvas.width = viewport.width;
+<script>
+    // КОНФИГУРАЦИЯ — Вставьте сюда ваш URL из Google Apps Script
+    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec';
+    
+    // 1. Получаем параметры из URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const fileId = urlParams.get('fid');
+    const userId = urlParams.get('id');
+    const qId = urlParams.get('qid');
 
-                    await page.render({canvasContext: ctx, viewport: viewport}).promise;
+    if (!fileId || !userId) {
+        showError("Ошибка: Недостаточно данных для открытия файла.");
+    } else {
+        init();
+    }
 
-                    // ВОДЯНОЙ ЗНАК
-                    ctx.save();
-                    ctx.font = "bold 18px Arial";
-                    ctx.fillStyle = "rgba(180, 180, 180, 0.25)";
-                    ctx.textAlign = "center";
-                    ctx.translate(canvas.width / 2, canvas.height / 2);
-                    ctx.rotate(-45 * Math.PI / 180);
+    async function init() {
+        try {
+            // 2. Запрашиваем текст водяного знака
+            updateStatus("Получение прав доступа...");
+            const wmResponse = await fetch(`${WEB_APP_URL}?action=getWatermark&id=${userId}`);
+            const wmResult = await wmResponse.json();
+            const watermarkText = wmResult.watermark || "ПРОСМОТР ЗАПРЕЩЕН";
 
-                    const watermarkText = `${userName} | кв. ${userRoom} | ${dateStamp} | (${userId})`;
-                    
-                    // Рисуем сетку с запасом (отрицательные координаты), чтобы покрыть весь лист при повороте
-                    for (let x = -1500; x < 1500; x += 450) {
-                        for (let y = -1500; y < 1500; y += 180) { 
-                            ctx.fillText(watermarkText, x, y); 
-                        }
-                    }
-                    ctx.restore();
-                    document.getElementById('pdf-container').appendChild(canvas);
-                }
-            } catch (e) { 
-                console.error(e);
-                document.getElementById('status').innerText = "Ошибка доступа или загрузки: " + e.message; 
+            // 3. Запрашиваем сам файл в Base64
+            updateStatus("Загрузка файла...");
+            const pdfResponse = await fetch(`${WEB_APP_URL}?action=getPdf&fid=${fileId}`);
+            const pdfResult = await pdfResponse.json();
+
+            if (pdfResult.success) {
+                renderPdf(pdfResult.base64, watermarkText);
+            } else {
+                showError("Документ не найден или доступ ограничен.");
             }
+        } catch (err) {
+            console.error(err);
+            showError("Ошибка связи с сервером.");
         }
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-        if(fileId) init();
-        else document.getElementById('status').innerText = "Файл не указан.";
-    </script>
+    }
+
+    async function renderPdf(base64, watermarkText) {
+        updateStatus("Отрисовка страниц...");
+        const binaryData = atob(base64);
+        const loadingTask = pdfjsLib.getDocument({ data: binaryData });
+        const pdf = await loadingTask.promise;
+        
+        const container = document.getElementById('viewer-container');
+        document.getElementById('loader').style.display = 'none';
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 1.5 });
+            
+            const pageContainer = document.createElement('div');
+            pageContainer.className = 'page-container';
+            
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+            // 4. Наложение водяного знака поверх страницы
+            applyWatermark(canvas, watermarkText);
+
+            pageContainer.appendChild(canvas);
+            container.appendChild(pageContainer);
+        }
+    }
+
+    function applyWatermark(canvas, text) {
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+
+        ctx.save();
+        ctx.font = `${Math.round(width / 25)}px Arial`;
+        ctx.fillStyle = "rgba(150, 150, 150, 0.4)"; // Цвет и прозрачность
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        
+        // Рисуем текст по диагонали (через всю страницу)
+        ctx.translate(width / 2, height / 2);
+        ctx.rotate(-Math.PI / 4);
+        
+        // Повторяем водяной знак несколько раз для защиты
+        for (let i = -2; i <= 2; i++) {
+            ctx.fillText(text, 0, i * (height / 5));
+        }
+        
+        ctx.restore();
+    }
+
+    function updateStatus(msg) {
+        document.getElementById('status-text').innerText = msg;
+    }
+
+    function showError(msg) {
+        document.getElementById('loader').innerHTML = `<div class="error-msg">${msg}</div>`;
+    }
+</script>
+
 </body>
 </html>
