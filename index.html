@@ -6,38 +6,22 @@
     <title>Документы Nest One</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
-    
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <script src="https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
 
     <style>
         body { margin: 0; background: #1a1a1a; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
-        
-        #header { 
-            width: 100%; background: #000; padding: 15px 0; 
-            border-bottom: 2px solid #d4af37; 
-            position: sticky; top: 0; z-index: 100; 
-            display: flex; justify-content: center; align-items: center; gap: 15px; 
-            flex-wrap: wrap;
-        }
-
+        #header { width: 100%; background: #000; padding: 15px 0; border-bottom: 2px solid #d4af37; position: sticky; top: 0; z-index: 100; display: flex; justify-content: center; align-items: center; gap: 15px; flex-wrap: wrap; }
         #title { font-weight: bold; letter-spacing: 1px; margin-right: 20px; }
-
-        .btn {
-            background-color: #333; color: #fff; border: 1px solid #555;
-            padding: 8px 15px; border-radius: 4px; cursor: pointer;
-            font-size: 14px; transition: 0.3s; display: flex; align-items: center; gap: 5px;
-            text-decoration: none;
-        }
-        .btn:hover { background-color: #d4af37; color: #000; border-color: #d4af37; }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; background-color: #222; color: #777; border-color: #333; }
-
+        .btn { background-color: #333; color: #fff; border: 1px solid #555; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-size: 14px; transition: 0.3s; }
+        .btn:hover { background-color: #d4af37; color: #000; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; background-color: #222; color: #777; }
         #viewer { display: flex; flex-direction: column; align-items: center; padding: 20px 10px; width: 100%; max-width: 1000px; }
         canvas { max-width: 100%; height: auto; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); background: #fff; border-radius: 4px; }
-        
         #loader { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; }
         .spinner { border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #d4af37; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 15px; }
         #status { color: #aaa; font-size: 14px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -50,79 +34,158 @@
 
 <div id="loader">
     <div class="spinner"></div>
-    <div id="status">Получение данных...</div>
+    <div id="status">Анализ файла...</div>
 </div>
 
 <div id="viewer"></div>
 
 <script>
+    // --- ВСТАВЬТЕ ССЫЛКУ ИЗ DEPLOY НИЖЕ ---
     const API = 'https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec';
     
     const params = new URLSearchParams(window.location.search);
     const fid = params.get('fid');
     const uid = params.get('id');
 
-    // Глобальные переменные
-    let rawPdfBytes = null; // Здесь будет лежать Uint8Array (готовый для pdf-lib)
-    let watermarkData = [];
+    let finalPdfBytes = null; // Здесь будет лежать готовый PDF (даже если загрузили картинку)
+    let fileName = `NestOne_Doc_${uid}.pdf`;
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
-    // === ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ КОНВЕРТАЦИИ ===
+    // Конвертер Base64 -> Bytes
     function base64ToUint8Array(base64) {
-        // Очищаем от возможных пробелов и переносов строк
         const raw = atob(base64.replace(/\s/g, ''));
         const rawLength = raw.length;
         const array = new Uint8Array(rawLength);
-        for (let i = 0; i < rawLength; i++) {
-            array[i] = raw.charCodeAt(i);
-        }
+        for (let i = 0; i < rawLength; i++) { array[i] = raw.charCodeAt(i); }
         return array;
     }
 
-    // 1. ИНИЦИАЛИЗАЦИЯ
     async function init() {
         if (!fid || !uid) { showError('Ошибка ссылки'); return; }
 
         try {
-            const [pdfRes, userRes] = await Promise.all([
+            // 1. Загружаем файл и данные юзера
+            const [fileRes, userRes] = await Promise.all([
                 fetch(`${API}?action=getPdf&fid=${fid}`),
                 fetch(`${API}?action=getUserInfo&id=${uid}`)
             ]);
 
-            const pdfJson = await pdfRes.json();
+            const fileJson = await fileRes.json();
             const userJson = await userRes.json();
 
-            if (!pdfJson.success) throw new Error("Файл не доступен");
+            if (!fileJson.success) throw new Error("Файл не доступен");
 
-            // ИСПРАВЛЕНИЕ: Конвертируем Base64 в Uint8Array сразу
-            rawPdfBytes = base64ToUint8Array(pdfJson.base64);
+            document.getElementById('status').innerText = 'Генерация документа...';
 
+            // 2. Подготовка данных штампа
             const userName = userJson.success ? userJson.name : 'Собственник';
             const userRoom = userJson.success ? userJson.premises : '---';
             const dateStr = new Date().toLocaleDateString('ru-RU');
-
-            watermarkData = [
+            const watermarkData = [
                 `${userName} (ID: ${uid})`,
                 `Помещение: ${userRoom}`,
                 `Дата: ${dateStr}`
             ];
 
-            // Рисуем превью
-            renderPreview(rawPdfBytes, watermarkData);
+            // 3. Создаем ЕДИНЫЙ PDF (из исходника или из картинки)
+            finalPdfBytes = await createProtectedPdf(fileJson, watermarkData);
 
-            // Включаем кнопки
+            // 4. Показываем результат
+            await renderPreview(finalPdfBytes);
+
+            // 5. Включаем кнопки
             document.getElementById('btnDownload').disabled = false;
             document.getElementById('btnPrint').disabled = false;
 
-        } catch (e) { showError('Ошибка доступа: ' + e.message); }
+        } catch (e) { showError('Ошибка: ' + e.message); console.error(e); }
     }
 
-    // 2. ОТРИСОВКА (Canvas)
-    async function renderPreview(pdfData, lines) {
-        document.getElementById('status').innerText = 'Обработка документа...';
-        // PDF.js отлично понимает Uint8Array
-        const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+    // ГЛАВНАЯ МАГИЯ: Создает PDF с водяным знаком из чего угодно
+    async function createProtectedPdf(fileJson, watermarkLines) {
+        const { PDFDocument, rgb, degrees } = PDFLib;
+        const fileBytes = base64ToUint8Array(fileJson.base64);
+        const mime = fileJson.mimeType || "";
+
+        let pdfDoc;
+
+        // А. Если это КАРТИНКА -> Создаем новый PDF и вставляем картинку
+        if (mime.includes('image')) {
+            pdfDoc = await PDFDocument.create();
+            const page = pdfDoc.addPage();
+            const { width, height } = page.getSize();
+            
+            let image;
+            if (mime.includes('png')) image = await pdfDoc.embedPng(fileBytes);
+            else image = await pdfDoc.embedJpg(fileBytes);
+
+            // Масштабируем картинку по размеру страницы
+            const imgDims = image.scaleToFit(width, height);
+            
+            page.drawImage(image, {
+                x: (width / 2) - (imgDims.width / 2),
+                y: (height / 2) - (imgDims.height / 2),
+                width: imgDims.width,
+                height: imgDims.height,
+            });
+        } 
+        // Б. Если это PDF -> Загружаем его
+        else {
+            pdfDoc = await PDFDocument.load(fileBytes);
+        }
+
+        // В. Добавляем водяные знаки (Шрифт Ubuntu для кириллицы)
+        pdfDoc.registerFontkit(fontkit);
+        const fontUrl = 'https://pdf-lib.js.org/assets/ubuntu/Ubuntu-R.ttf';
+        const fontBytes = await fetch(fontUrl).then(res => res.arrayBuffer());
+        const customFont = await pdfDoc.embedFont(fontBytes);
+
+        const pages = pdfDoc.getPages();
+        const fontSize = 14;
+        const lineHeight = 16;
+        const opacity = 0.30;
+        const color = rgb(1, 0, 0); // Красный
+
+        // Расчет ширины штампа
+        let maxW = 0;
+        watermarkLines.forEach(l => {
+            const w = customFont.widthOfTextAtSize(l, fontSize);
+            if(w > maxW) maxW = w;
+        });
+        
+        const stepX = maxW + 80;
+        const stepY = (watermarkLines.length * lineHeight) + 60;
+
+        // Рисуем на каждой странице
+        pages.forEach(page => {
+            const { width, height } = page.getSize();
+            const diag = Math.sqrt(width*width + height*height) + 500;
+
+            for (let y = -diag; y < diag; y += stepY) {
+                const rowShift = (Math.floor(y/stepY)%2 === 0) ? 0 : stepX/2;
+                for (let x = -diag; x < diag; x += stepX) {
+                    watermarkLines.forEach((line, i) => {
+                        const offset = (i - (watermarkLines.length-1)/2) * lineHeight;
+                        page.drawText(line, {
+                            x: (width/2) + x + rowShift,
+                            y: (height/2) + y - offset,
+                            size: fontSize,
+                            font: customFont,
+                            color: color,
+                            opacity: opacity,
+                            rotate: degrees(-45),
+                        });
+                    });
+                }
+            }
+        });
+
+        return await pdfDoc.save();
+    }
+
+    async function renderPreview(pdfBytes) {
+        document.getElementById('status').innerText = 'Рендеринг...';
+        const pdf = await pdfjsLib.getDocument({ data: pdfBytes }).promise;
         document.getElementById('loader').style.display = 'none';
 
         for (let n = 1; n <= pdf.numPages; n++) {
@@ -133,127 +196,27 @@
             canvas.height = viewport.height; canvas.width = viewport.width;
 
             await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-            drawCanvasWatermark(canvas, lines);
             document.getElementById('viewer').appendChild(canvas);
         }
     }
 
-    function drawCanvasWatermark(canvas, lines) {
-        const ctx = canvas.getContext('2d');
-        const w = canvas.width; const h = canvas.height;
-        ctx.save();
-        
-        const fontSize = Math.max(16, Math.round(w / 50));
-        ctx.font = `bold ${fontSize}px Arial`;
-        ctx.fillStyle = "rgba(255, 0, 0, 0.25)";
-        ctx.textAlign = "center"; ctx.textBaseline = "middle";
-
-        let maxWidth = 0;
-        lines.forEach(l => { const m = ctx.measureText(l); if(m.width>maxWidth) maxWidth=m.width; });
-        
-        const lineHeight = fontSize * 1.1;
-        const blockHeight = lines.length * lineHeight;
-        const stepX = maxWidth + 60; const stepY = blockHeight + 50;
-
-        ctx.translate(w/2, h/2); ctx.rotate(-45 * Math.PI / 180);
-        const diag = Math.sqrt(w*w + h*h) + 500;
-
-        for (let y = -diag; y < diag; y += stepY) {
-            const rowShift = (Math.floor(y/stepY)%2 === 0) ? 0 : stepX/2;
-            for (let x = -diag; x < diag; x += stepX) {
-                lines.forEach((l, i) => {
-                    const ly = y + (i - (lines.length-1)/2) * lineHeight;
-                    ctx.fillText(l, x + rowShift, ly);
-                });
-            }
-        }
-        ctx.restore();
-    }
-
-    // 3. ГЕНЕРАЦИЯ (PDF-Lib)
     async function handleAction(type) {
-        const btn = document.getElementById(type === 'download' ? 'btnDownload' : 'btnPrint');
-        const originalText = btn.innerText;
-        btn.disabled = true;
-        btn.innerText = "⏳ Генерация...";
+        const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
 
-        try {
-            const { PDFDocument, rgb, degrees } = PDFLib;
-            
-            // ИСПРАВЛЕНИЕ: Передаем Uint8Array, а не Base64 строку.
-            // Теперь pdf-lib точно найдет header.
-            const pdfDoc = await PDFDocument.load(rawPdfBytes);
-            
-            pdfDoc.registerFontkit(fontkit);
-            const fontUrl = 'https://pdf-lib.js.org/assets/ubuntu/Ubuntu-R.ttf';
-            const fontBytes = await fetch(fontUrl).then(res => res.arrayBuffer());
-            const customFont = await pdfDoc.embedFont(fontBytes);
-
-            const pages = pdfDoc.getPages();
-            const fontSize = 14;
-            const lineHeight = 16;
-            const opacity = 0.25;
-            const color = rgb(1, 0, 0);
-
-            let maxW = 0;
-            watermarkData.forEach(l => {
-                const w = customFont.widthOfTextAtSize(l, fontSize);
-                if(w > maxW) maxW = w;
-            });
-            
-            const stepX = maxW + 80;
-            const stepY = (watermarkData.length * lineHeight) + 60;
-
-            pages.forEach(page => {
-                const { width, height } = page.getSize();
-                const diag = Math.sqrt(width*width + height*height) + 500;
-
-                for (let y = -diag; y < diag; y += stepY) {
-                    const rowShift = (Math.floor(y/stepY)%2 === 0) ? 0 : stepX/2;
-                    for (let x = -diag; x < diag; x += stepX) {
-                        watermarkData.forEach((line, i) => {
-                            const offset = (i - (watermarkData.length-1)/2) * lineHeight;
-                            page.drawText(line, {
-                                x: (width/2) + x + rowShift,
-                                y: (height/2) + y - offset,
-                                size: fontSize,
-                                font: customFont,
-                                color: color,
-                                opacity: opacity,
-                                rotate: degrees(-45),
-                            });
-                        });
-                    }
-                }
-            });
-
-            const pdfBytes = await pdfDoc.save();
-            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-            const url = URL.createObjectURL(blob);
-
-            if (type === 'download') {
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `NestOne_Doc_${uid}.pdf`;
-                link.click();
-            } else {
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                iframe.src = url;
-                document.body.appendChild(iframe);
-                iframe.onload = function() {
-                    setTimeout(function() {
-                        iframe.contentWindow.print();
-                    }, 500);
-                };
-            }
-
-        } catch (e) {
-            alert("Ошибка генерации: " + e.message);
-            console.error(e);
-        } finally {
-            btn.disabled = false;
-            btn.innerText = originalText;
+        if (type === 'download') {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            link.click();
+        } else {
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = url;
+            document.body.appendChild(iframe);
+            iframe.onload = function() {
+                setTimeout(() => { iframe.contentWindow.print(); }, 500);
+            };
         }
     }
 
