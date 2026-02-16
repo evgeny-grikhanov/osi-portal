@@ -23,10 +23,9 @@
 <div id="viewer"></div>
 
 <script>
-    // --- ОБНОВИТЕ ССЫЛКУ ЕСЛИ ДЕЛАЛИ НОВЫЙ ДЕПЛОЙ ---
+    // --- ВСТАВЬТЕ ССЫЛКУ ИЗ DEPLOY НИЖЕ ---
     const API = 'https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec';
     
-    // Получаем параметры из URL (которые сформировал Google Script)
     const params = new URLSearchParams(window.location.search);
     const fid = params.get('fid');
     const uid = params.get('id');
@@ -44,7 +43,6 @@
         }
 
         try {
-            // Загружаем только PDF, данные для штампа берем из URL
             const pdfRes = await fetch(`${API}?action=getPdf&fid=${fid}`);
             const pdfData = await pdfRes.json();
 
@@ -79,9 +77,7 @@
             canvas.width = viewport.width;
 
             await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-            
             drawWM(canvas, lines);
-            
             document.getElementById('viewer').appendChild(canvas);
         }
     }
@@ -89,60 +85,3 @@
     function drawWM(canvas, lines) {
         const ctx = canvas.getContext('2d');
         const w = canvas.width;
-        const h = canvas.height;
-
-        ctx.save();
-        
-        // 1. Настройка шрифта
-        const fontSize = Math.max(18, Math.round(w / 45));
-        ctx.font = `bold ${fontSize}px Arial`;
-        ctx.fillStyle = "rgba(255, 50, 50, 0.15)"; // Прозрачный красный
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-
-        // 2. Расчет размеров блока
-        // Находим самую длинную строку, чтобы рассчитать ширину блока
-        let maxWidth = 0;
-        lines.forEach(line => {
-            const m = ctx.measureText(line);
-            if (m.width > maxWidth) maxWidth = m.width;
-        });
-
-        const lineHeight = fontSize * 1.4; // Межстрочный интервал
-        const blockHeight = lines.length * lineHeight; // Высота всего "штампа"
-
-        // 3. Шаг сетки (Отступы между штампами)
-        const stepX = maxWidth + 200; 
-        const stepY = blockHeight + 250;
-
-        // 4. Поворот и отрисовка
-        ctx.translate(w / 2, h / 2);
-        ctx.rotate(-45 * Math.PI / 180);
-
-        const diag = Math.sqrt(w*w + h*h); // Диагональ холста
-
-        // Цикл по Y (строки сетки)
-        for (let y = -diag; y < diag; y += stepY) {
-            // Смещение для шахматного порядка
-            const rowShift = (Math.floor(y / stepY) % 2 === 0) ? 0 : stepX / 2;
-
-            // Цикл по X (столбцы сетки)
-            for (let x = -diag; x < diag; x += stepX) {
-                
-                // Рисуем каждую строку "штампа"
-                lines.forEach((line, index) => {
-                    // Смещение строки внутри штампа по вертикали
-                    // (index - (lines.length-1)/2) нужно для центровки блока
-                    const lineY = y + (index - (lines.length - 1) / 2) * lineHeight;
-                    
-                    ctx.fillText(line, x + rowShift, lineY);
-                });
-            }
-        }
-        ctx.restore();
-    }
-
-    load();
-</script>
-</body>
-</html>
