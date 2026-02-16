@@ -23,12 +23,16 @@
 <div id="viewer"></div>
 
 <script>
-    // --- ВНИМАНИЕ: УБЕДИТЕСЬ, ЧТО ССЫЛКА СОВПАДАЕТ С ВАШИМ DEPLOY ---
+    // --- ОБНОВИТЕ ССЫЛКУ ЕСЛИ ДЕЛАЛИ НОВЫЙ ДЕПЛОЙ ---
     const API = 'https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec';
     
+    // Получаем параметры из URL (которые сформировал Google Script)
     const params = new URLSearchParams(window.location.search);
     const fid = params.get('fid');
     const uid = params.get('id');
+    const name = params.get('name') || 'Собственник';
+    const room = params.get('room') || 'Не указано';
+    const date = params.get('date') || new Date().toLocaleDateString();
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
@@ -40,22 +44,20 @@
         }
 
         try {
-            // Параллельная загрузка данных
-            const [wmRes, pdfRes] = await Promise.all([
-                fetch(`${API}?action=getWatermark&id=${uid}`).catch(() => null),
-                fetch(`${API}?action=getPdf&fid=${fid}`)
-            ]);
-
+            // Загружаем только PDF, данные для штампа берем из URL
+            const pdfRes = await fetch(`${API}?action=getPdf&fid=${fid}`);
             const pdfData = await pdfRes.json();
+
             if (!pdfData.success) throw new Error("Файл не найден");
 
-            let wmText = `ID: ${uid}`;
-            if (wmRes) {
-                const wmData = await wmRes.json();
-                if (wmData.success) wmText = wmData.watermark;
-            }
+            // Формируем массив строк для штампа
+            const watermarkLines = [
+                `${name} (ID: ${uid})`,
+                `Помещение: ${room}`,
+                `Дата: ${date}`
+            ];
 
-            render(pdfData.base64, wmText);
+            render(pdfData.base64, watermarkLines);
 
         } catch (e) { 
             document.getElementById('status').innerText = 'Ошибка доступа или загрузки'; 
@@ -64,7 +66,7 @@
         }
     }
 
-    async function render(base64, text) {
+    async function render(base64, lines) {
         const pdf = await pdfjsLib.getDocument({ data: atob(base64) }).promise;
         document.getElementById('loader').style.display = 'none';
 
@@ -78,51 +80,63 @@
 
             await page.render({ canvasContext: ctx, viewport: viewport }).promise;
             
-            drawWM(canvas, text);
+            drawWM(canvas, lines);
             
             document.getElementById('viewer').appendChild(canvas);
         }
     }
 
-    // ИСПРАВЛЕННАЯ ФУНКЦИЯ ОТРИСОВКИ
-    function drawWM(canvas, text) {
+    function drawWM(canvas, lines) {
         const ctx = canvas.getContext('2d');
         const w = canvas.width;
         const h = canvas.height;
 
         ctx.save();
         
-        // 1. Настраиваем шрифт (динамический размер, но не меньше 20px)
-        const fontSize = Math.max(20, Math.round(w / 40));
+        // 1. Настройка шрифта
+        const fontSize = Math.max(18, Math.round(w / 45));
         ctx.font = `bold ${fontSize}px Arial`;
-        ctx.fillStyle = "rgba(255, 50, 50, 0.12)"; // Прозрачный красный
+        ctx.fillStyle = "rgba(255, 50, 50, 0.15)"; // Прозрачный красный
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
 
-        // 2. ИЗМЕРЯЕМ ТЕКСТ (Самое важное!)
-        const metrics = ctx.measureText(text);
-        const textWidth = metrics.width;
+        // 2. Расчет размеров блока
+        // Находим самую длинную строку, чтобы рассчитать ширину блока
+        let maxWidth = 0;
+        lines.forEach(line => {
+            const m = ctx.measureText(line);
+            if (m.width > maxWidth) maxWidth = m.width;
+        });
 
-        // 3. Рассчитываем шаги сетки на основе ширины текста
-        // stepX = ширина текста + 200px отступа, чтобы они не слипались
-        const stepX = textWidth + 250; 
-        // stepY = высота строки + 150px отступа сверху/снизу
-        const stepY = fontSize + 200;
+        const lineHeight = fontSize * 1.4; // Межстрочный интервал
+        const blockHeight = lines.length * lineHeight; // Высота всего "штампа"
 
-        // 4. Поворот холста
+        // 3. Шаг сетки (Отступы между штампами)
+        const stepX = maxWidth + 200; 
+        const stepY = blockHeight + 250;
+
+        // 4. Поворот и отрисовка
         ctx.translate(w / 2, h / 2);
         ctx.rotate(-45 * Math.PI / 180);
 
-        // 5. Рисуем сетку с большим запасом (диагональ), чтобы покрыть углы
-        const diag = Math.sqrt(w*w + h*h);
+        const diag = Math.sqrt(w*w + h*h); // Диагональ холста
 
+        // Цикл по Y (строки сетки)
         for (let y = -diag; y < diag; y += stepY) {
-            // Делаем смещение каждой второй строки (шахматный порядок)
-            // Это делает чтение документа удобнее
+            // Смещение для шахматного порядка
             const rowShift = (Math.floor(y / stepY) % 2 === 0) ? 0 : stepX / 2;
 
+            // Цикл по X (столбцы сетки)
             for (let x = -diag; x < diag; x += stepX) {
-                ctx.fillText(text, x + rowShift, y);
+                
+                // Рисуем каждую строку "штампа"
+                lines.forEach((line, index) => {
+                    // Смещение строки внутри штампа по вертикали
+                    // (index - (lines.length-1)/2) нужно для центровки блока
+                    const lineY = y + (index - (lines.length - 1) / 2) * lineHeight;
+                    
+                    ctx.fillText(line, x + rowShift, lineY);
+                });
             }
         }
         ctx.restore();
