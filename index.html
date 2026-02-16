@@ -23,7 +23,7 @@
 <div id="viewer"></div>
 
 <script>
-    // --- ВСТАВЬТЕ ССЫЛКУ ИЗ DEPLOY НИЖЕ ---
+    // --- ВАША ССЫЛКА ---
     const API = 'https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec';
     
     const params = new URLSearchParams(window.location.search);
@@ -85,3 +85,62 @@
     function drawWM(canvas, lines) {
         const ctx = canvas.getContext('2d');
         const w = canvas.width;
+        const h = canvas.height;
+
+        ctx.save();
+        
+        // 1. ШРИФТ И ЦВЕТ
+        const fontSize = Math.max(16, Math.round(w / 50)); 
+        ctx.font = `bold ${fontSize}px Arial`;
+        
+        // Ярко-красный, полупрозрачный (0.25)
+        ctx.fillStyle = "rgba(255, 0, 0, 0.25)"; 
+        
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        // 2. РАСЧЕТ РАЗМЕРОВ
+        let maxWidth = 0;
+        lines.forEach(line => {
+            const m = ctx.measureText(line);
+            if (m.width > maxWidth) maxWidth = m.width;
+        });
+
+        // Плотный межстрочный интервал (1.1)
+        const lineHeight = fontSize * 1.1; 
+        const blockHeight = lines.length * lineHeight;
+
+        // 3. СЕТКА (ПЛОТНАЯ)
+        // Минимальные отступы, чтобы текст шел сплошняком
+        const marginX = 60; 
+        const marginY = 50; 
+
+        const stepX = maxWidth + marginX;
+        const stepY = blockHeight + marginY;
+
+        // 4. ПОВОРОТ И ОТРИСОВКА
+        ctx.translate(w / 2, h / 2);
+        ctx.rotate(-45 * Math.PI / 180);
+
+        // Увеличили область отрисовки для надежности
+        const diag = Math.sqrt(w*w + h*h) + 500;
+
+        for (let y = -diag; y < diag; y += stepY) {
+            // Шахматный порядок
+            const rowShift = (Math.floor(y / stepY) % 2 === 0) ? 0 : stepX / 2;
+
+            for (let x = -diag; x < diag; x += stepX) {
+                lines.forEach((line, index) => {
+                    // Центровка строк внутри блока
+                    const lineY = y + (index - (lines.length - 1) / 2) * lineHeight;
+                    ctx.fillText(line, x + rowShift, lineY);
+                });
+            }
+        }
+        ctx.restore();
+    }
+
+    load();
+</script>
+</body>
+</html>
