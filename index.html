@@ -7,22 +7,23 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <style>
         body { margin: 0; background: #1a1a1a; color: #fff; font-family: sans-serif; }
-        #header { background: #000; padding: 15px; text-align: center; border-bottom: 2px solid #d4af37; position: sticky; top: 0; z-index: 10; }
+        #header { background: #000; padding: 15px; text-align: center; border-bottom: 2px solid #d4af37; position: sticky; top: 0; z-index: 10; font-weight: bold; letter-spacing: 1px; }
         #viewer { display: flex; flex-direction: column; align-items: center; padding: 10px; }
         canvas { max-width: 100%; height: auto; margin-bottom: 20px; box-shadow: 0 0 20px rgba(0,0,0,0.5); background: #fff; }
         #loader { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; }
-        .spinner { border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #d4af37; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 10px; }
+        .spinner { border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #d4af37; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 15px; }
+        #status { color: #aaa; font-size: 14px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
 <div id="header">ЗАЩИЩЕННЫЙ ПРОСМОТР</div>
-<div id="loader"><div class="spinner"></div><div id="status">Загрузка...</div></div>
+<div id="loader"><div class="spinner"></div><div id="status">Загрузка защищенного документа...</div></div>
 <div id="viewer"></div>
 
 <script>
-    // 1. ВСТАВЬ СЮДА СВОЮ НОВУЮ ССЫЛКУ ПОСЛЕ ДЕПЛОЯ
+    // --- ВНИМАНИЕ: УБЕДИТЕСЬ, ЧТО ССЫЛКА СОВПАДАЕТ С ВАШИМ DEPLOY ---
     const API = 'https://script.google.com/macros/s/AKfycbwh9dwQE_8lM3ZYbEEVyo4DwUC3RFdcXTi_tdBhmIjt237exEIiQFzW0uS11OQfzyDW/exec';
     
     const params = new URLSearchParams(window.location.search);
@@ -32,21 +33,35 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
     async function load() {
-        if (!fid || !uid) { document.getElementById('status').innerText = 'Ошибка ссылки'; return; }
+        if (!fid || !uid) { 
+            document.getElementById('status').innerText = 'Ошибка: Неверная ссылка'; 
+            document.querySelector('.spinner').style.display = 'none';
+            return; 
+        }
 
         try {
-            // Шаг 1: Водяной знак
-            const wmRes = await fetch(`${API}?action=getWatermark&id=${uid}`);
-            const wmData = await wmRes.json();
-            
-            // Шаг 2: PDF
-            const pdfRes = await fetch(`${API}?action=getPdf&fid=${fid}`);
-            const pdfData = await pdfRes.json();
+            // Параллельная загрузка данных
+            const [wmRes, pdfRes] = await Promise.all([
+                fetch(`${API}?action=getWatermark&id=${uid}`).catch(() => null),
+                fetch(`${API}?action=getPdf&fid=${fid}`)
+            ]);
 
-            if (pdfData.success) {
-                render(pdfData.base64, wmData.watermark);
+            const pdfData = await pdfRes.json();
+            if (!pdfData.success) throw new Error("Файл не найден");
+
+            let wmText = `ID: ${uid}`;
+            if (wmRes) {
+                const wmData = await wmRes.json();
+                if (wmData.success) wmText = wmData.watermark;
             }
-        } catch (e) { document.getElementById('status').innerText = 'Ошибка доступа'; }
+
+            render(pdfData.base64, wmText);
+
+        } catch (e) { 
+            document.getElementById('status').innerText = 'Ошибка доступа или загрузки'; 
+            document.querySelector('.spinner').style.display = 'none';
+            console.error(e);
+        }
     }
 
     async function render(base64, text) {
@@ -62,33 +77,53 @@
             canvas.width = viewport.width;
 
             await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+            
             drawWM(canvas, text);
+            
             document.getElementById('viewer').appendChild(canvas);
         }
     }
 
+    // ИСПРАВЛЕННАЯ ФУНКЦИЯ ОТРИСОВКИ
     function drawWM(canvas, text) {
         const ctx = canvas.getContext('2d');
         const w = canvas.width;
         const h = canvas.height;
 
         ctx.save();
-        ctx.font = `bold ${Math.round(w / 35)}px Arial`;
-        ctx.fillStyle = "rgba(255, 0, 0, 0.12)"; // Бледно-красный
-        ctx.textAlign = "center";
         
+        // 1. Настраиваем шрифт (динамический размер, но не меньше 20px)
+        const fontSize = Math.max(20, Math.round(w / 40));
+        ctx.font = `bold ${fontSize}px Arial`;
+        ctx.fillStyle = "rgba(255, 50, 50, 0.12)"; // Прозрачный красный
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        // 2. ИЗМЕРЯЕМ ТЕКСТ (Самое важное!)
+        const metrics = ctx.measureText(text);
+        const textWidth = metrics.width;
+
+        // 3. Рассчитываем шаги сетки на основе ширины текста
+        // stepX = ширина текста + 200px отступа, чтобы они не слипались
+        const stepX = textWidth + 250; 
+        // stepY = высота строки + 150px отступа сверху/снизу
+        const stepY = fontSize + 200;
+
+        // 4. Поворот холста
         ctx.translate(w / 2, h / 2);
-        ctx.rotate(-Math.PI / 4);
+        ctx.rotate(-45 * Math.PI / 180);
 
-        const stepY = h / 25; // Расстояние между 25+ строками
-        const stepX = w / 1.4; // Смещение для повторов
+        // 5. Рисуем сетку с большим запасом (диагональ), чтобы покрыть углы
+        const diag = Math.sqrt(w*w + h*h);
 
-        for (let i = -18; i <= 18; i++) {
-            const y = i * stepY;
-            // 3 повторения в строке
-            ctx.fillText(text, -stepX, y);
-            ctx.fillText(text, 0, y);
-            ctx.fillText(text, stepX, y);
+        for (let y = -diag; y < diag; y += stepY) {
+            // Делаем смещение каждой второй строки (шахматный порядок)
+            // Это делает чтение документа удобнее
+            const rowShift = (Math.floor(y / stepY) % 2 === 0) ? 0 : stepX / 2;
+
+            for (let x = -diag; x < diag; x += stepX) {
+                ctx.fillText(text, x + rowShift, y);
+            }
         }
         ctx.restore();
     }
